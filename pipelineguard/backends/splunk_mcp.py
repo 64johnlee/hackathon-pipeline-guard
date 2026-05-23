@@ -1,0 +1,153 @@
+"""Splunk MCP backend — connects to the Splunk MCP Server via HTTP/SSE."""
+from __future__ import annotations
+
+import logging
+import ssl
+from typing import Any
+
+import httpx
+from google.genai import types
+
+try:
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
+    from mcp.types import Tool as MCPTool
+    _MCP_AVAILABLE = True
+except ImportError:
+    _MCP_AVAILABLE = False
+    ClientSession = None  # type: ignore[assignment,misc]
+    sse_client = None  # type: ignore[assignment]
+    MCPTool = None  # type: ignore[assignment,misc]
+
+logger = logging.getLogger(__name__)
+
+
+class SplunkMCPBackend:
+    """
+    Connects to the Splunk MCP Server App (Splunkbase App ID 7931) over HTTP/SSE
+    and exposes its tools as Gemini FunctionDeclaration objects for the agent loop.
+
+    The Splunk MCP Server is hosted inside your Splunk instance at:
+        https://<host>:8089/services/mcp          (primary, requires port allowlisting)
+        https://<host>/en-US/splunkd/__raw/services/mcp  (fallback via port 443)
+
+    Auth: an encrypted token generated from the Splunk MCP Server App UI.
+    """
+
+    def __init__(
+        self,
+        splunk_token: str,
+        splunk_url: str = "https://localhost:8089/services/mcp",
+        verify_ssl: bool = True,
+    ) -> None:
+        self._splunk_token = splunk_token
+        self._splunk_url = splunk_url.rstrip("/")
+        self._verify_ssl = verify_ssl
+        self._session: ClientSession | None = None
+        self._sse_cm = None
+
+    @staticmethod
+    def is_available() -> bool:
+        return _MCP_AVAILABLE
+
+    async def is_reachable(self) -> bool:
+        """Quick HTTP check that the Splunk MCP endpoint responds."""
+        try:
+            async with httpx.AsyncClient(verify=self._verify_ssl, timeout=5.0) as client:
+                r = await client.get(
+                    self._splunk_url,
+                    headers={"Authorization": f"Splunk {self._splunk_token}"},
+                )
+                return r.status_code < 500
+        except Exception as exc:
+            logger.debug("Splunk MCP reachability check failed: %s", exc)
+            return False
+
+    async def __aenter__(self) -> "SplunkMCPBackend":
+        if not _MCP_AVAILABLE:
+            raise RuntimeError(
+                "The 'mcp' Python package is not installed. Run: pip install mcp"
+            )
+
+        headers = {
+            "Authorization": f"Splunk {self._splunk_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Build SSL context for self-signed certs in local Splunk dev instances
+        ssl_context: ssl.SSLContext | bool = self._verify_ssl
+        if not self._verify_ssl:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+        logger.info("Connecting to Splunk MCP Server at %s …", self._splunk_url)
+        self._sse_cm = sse_client(url=self._splunk_url, headers=headers)
+        read, write = await self._sse_cm.__aenter__()
+        self._session = ClientSession(read, write)
+        await self._session.__aenter__()
+        await self._session.initialize()
+        logger.debug("Splunk MCP Server ready")
+        return self
+
+    async def __aexit__(self, *exc_info: Any) -> None:
+        if self._session:
+            await self._session.__aexit__(*exc_info)
+        if self._sse_cm:
+            await self._sse_cm.__aexit__(*exc_info)
+
+    async def list_tools_as_gemini(self) -> list[types.Tool]:
+        """Return the Splunk MCP tool list converted to Gemini Tool objects."""
+        assert self._session is not None
+        result = await self._session.list_tools()
+        declarations = [_mcp_to_gemini_declaration(t) for t in result.tools]
+        logger.debug("Loaded %d tools from Splunk MCP Server", len(declarations))
+        return [types.Tool(function_declarations=declarations)]
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        """Execute a Splunk MCP tool and return its text output."""
+        assert self._session is not None
+        result = await self._session.call_tool(name, arguments)
+        if result.isError:
+            logger.warning("Splunk MCP tool %r returned an error", name)
+        parts: list[str] = []
+        for item in result.content:
+            if hasattr(item, "text"):
+                parts.append(item.text)
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Schema conversion helpers (identical logic to GitLab MCPBackend)
+# ---------------------------------------------------------------------------
+
+def _mcp_to_gemini_declaration(tool: MCPTool) -> types.FunctionDeclaration:
+    schema = tool.inputSchema or {}
+    properties: dict[str, types.Schema] = {}
+    for prop_name, prop_def in schema.get("properties", {}).items():
+        properties[prop_name] = types.Schema(
+            type=_json_type_to_gemini(prop_def.get("type", "string")),
+            description=prop_def.get("description", ""),
+        )
+    return types.FunctionDeclaration(
+        name=tool.name,
+        description=tool.description or "",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties=properties,
+            required=schema.get("required", []),
+        ),
+    )
+
+
+def _json_type_to_gemini(json_type: str) -> types.Type:
+    return {
+        "string": types.Type.STRING,
+        "integer": types.Type.INTEGER,
+        "number": types.Type.NUMBER,
+        "boolean": types.Type.BOOLEAN,
+        "array": types.Type.ARRAY,
+        "object": types.Type.OBJECT,
+    }.get(json_type, types.Type.STRING)
