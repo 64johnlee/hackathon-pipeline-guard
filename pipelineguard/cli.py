@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .agent import PipelineGuardAgent
+from .splunk_agent import SplunkGuardAgent
 
 load_dotenv()
 console = Console()
@@ -183,3 +184,93 @@ def watch(
             await asyncio.sleep(interval)
 
     asyncio.run(_poll())
+
+
+# ---------------------------------------------------------------------------
+# Splunk subcommand group
+# ---------------------------------------------------------------------------
+
+@main.group()
+def splunk() -> None:
+    """SplunkGuard — AI-powered Splunk observability investigations."""
+
+
+@splunk.command()
+@click.argument("question")
+@click.option("--earliest", "-e", default="-24h", show_default=True,
+              help="Earliest time for Splunk searches (SPL time modifier).")
+@click.option("--latest", "-l", default="now", show_default=True,
+              help="Latest time for Splunk searches.")
+@click.option("--splunk-url", envvar="SPLUNK_MCP_URL",
+              default="https://localhost:8089/services/mcp", show_default=True,
+              help="Splunk MCP Server endpoint ($SPLUNK_MCP_URL).")
+@click.option("--splunk-token", envvar="SPLUNK_MCP_TOKEN", required=True,
+              help="Encrypted token from Splunk MCP Server App ($SPLUNK_MCP_TOKEN).")
+@click.option("--no-verify-ssl", is_flag=True, default=False,
+              help="Disable SSL verification (for local Splunk with self-signed cert).")
+@click.option("--direct", is_flag=True, default=False,
+              help="Skip MCP server, query Splunk REST API directly.")
+@click.option("--gemini-key", envvar="GEMINI_API_KEY", required=True,
+              help="Gemini API key ($GEMINI_API_KEY).")
+def investigate(
+    question: str,
+    earliest: str,
+    latest: str,
+    splunk_url: str,
+    splunk_token: str,
+    no_verify_ssl: bool,
+    direct: bool,
+    gemini_key: str,
+) -> None:
+    """Investigate a question against Splunk data using Gemini.
+
+    QUESTION is a natural-language description of what to investigate,
+    e.g. "why did build error rates spike at 2am?" or "find failed logins".
+    """
+    agent = SplunkGuardAgent(
+        gemini_api_key=gemini_key,
+        splunk_token=splunk_token,
+        splunk_url=splunk_url,
+        verify_ssl=not no_verify_ssl,
+        force_direct=direct,
+    )
+
+    try:
+        report = asyncio.run(
+            agent.investigate(question=question, earliest=earliest, latest=latest)
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Error:[/] {exc}")
+        sys.exit(1)
+
+    console.print()
+    ongoing_tag = " · [yellow]ONGOING[/]" if report.is_ongoing else ""
+    console.print(
+        Panel(
+            f"[bold red]Root cause:[/] {report.root_cause}\n"
+            f"[dim]Category:[/] {report.investigation_category}"
+            + ongoing_tag
+            + (f"\n[dim]Affected:[/] {', '.join(report.affected_components)}" if report.affected_components else "")
+            + (f"\n[dim]Time range:[/] {report.time_range}" if report.time_range else ""),
+            title="[bold cyan]Investigation[/]",
+            border_style="cyan",
+        )
+    )
+
+    if report.recommended_actions:
+        table = Table(title="Recommended Actions", show_lines=True)
+        table.add_column("Action", style="cyan")
+        table.add_column("Confidence", justify="center")
+        table.add_column("Monitor SPL")
+        for action in report.recommended_actions:
+            conf = action.get("confidence", "")
+            conf_color = {"high": "green", "medium": "yellow", "low": "red"}.get(conf, "white")
+            table.add_row(
+                action.get("action", ""),
+                f"[{conf_color}]{conf}[/]",
+                action.get("spl_query", ""),
+            )
+        console.print(table)
+
+    console.print("\n[bold]Full Analysis[/]")
+    console.print(Markdown(report.full_analysis))
