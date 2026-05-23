@@ -1,0 +1,23 @@
+{
+  "object_kind": "pipeline",
+  "user": { "name": "Jane Developer", "username": "jdev" },
+  "project": {
+    "id": 999,
+    "name": "api-service",
+    "path_with_namespace": "myorg/api-service",
+    "web_url": "https://gitlab.com/myorg/api-service"
+  },
+  "commit": { "id": "abc123def456", "message": "fix: update dependencies" },
+  "object_attributes": {
+    "id": 84321,
+    "ref": "feature/add-caching",
+    "status": "failed",
+    "duration": 47,
+    "stages": ["build", "test"]
+  },
+  "builds": [
+    { "id": 198744, "stage": "test", "name": "test-unit", "status": "failed",
+      "failure_reason": "script_failure" },
+    { "id": 198745, "stage": "test", "name": "test-integration", "status": "canceled" }
+  ]
+}

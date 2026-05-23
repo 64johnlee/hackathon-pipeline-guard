@@ -187,6 +187,66 @@ def watch(
 
 
 # ---------------------------------------------------------------------------
+# Serve (webhook) command
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host.")
+@click.option("--port", "-p", default=8765, type=int, show_default=True, help="Bind port.")
+@click.option("--webhook-secret", envvar="WEBHOOK_SECRET", default="",
+              help="Optional GitLab webhook token ($WEBHOOK_SECRET).")
+@click.option("--comment/--no-comment", default=True,
+              help="Auto-post diagnosis comment on the failing MR.")
+@click.option("--direct", is_flag=True, default=False)
+@click.option("--gemini-key", envvar="GEMINI_API_KEY", required=True)
+@click.option("--gitlab-token", envvar="GITLAB_TOKEN", required=True)
+@click.option("--gitlab-url", envvar="GITLAB_URL", default="https://gitlab.com")
+def serve(
+    host: str,
+    port: int,
+    webhook_secret: str,
+    comment: bool,
+    direct: bool,
+    gemini_key: str,
+    gitlab_token: str,
+    gitlab_url: str,
+) -> None:
+    """Start a webhook server to auto-diagnose GitLab pipeline failures.
+
+    Configure a GitLab Pipeline webhook pointing to
+    http://<host>:<port>/webhook/gitlab.
+    When a pipeline fails PipelineGuard diagnoses it and posts a comment
+    on the associated merge request.
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]uvicorn is required:[/] pip install 'pipelineguard[web]'")
+        sys.exit(1)
+
+    from .webhook import make_app
+
+    app = make_app(
+        gemini_api_key=gemini_key,
+        gitlab_token=gitlab_token,
+        gitlab_url=gitlab_url,
+        webhook_secret=webhook_secret,
+        post_comment=comment,
+        force_direct=direct,
+    )
+
+    console.print(
+        Panel(
+            f"[bold cyan]PipelineGuard Webhook[/]\n"
+            f"Endpoint: [green]http://{host}:{port}/webhook/gitlab[/]\n"
+            f"Post MR comment: [yellow]{'yes' if comment else 'no'}[/]",
+            border_style="cyan",
+        )
+    )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+# ---------------------------------------------------------------------------
 # Splunk subcommand group
 # ---------------------------------------------------------------------------
 

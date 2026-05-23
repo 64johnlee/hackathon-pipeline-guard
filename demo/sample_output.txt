@@ -1,0 +1,53 @@
+$ pipelineguard diagnose myorg/api-service --comment
+
+╭─────────────────────────────────────────────────────────────────────────╮
+│  PipelineGuard · project myorg/api-service · latest failed              │
+│  mode: MCP                                                               │
+╰─────────────────────────────────────────────────────────────────────────╯
+  → list_pipelines({"project_id": "myorg/api-service", "status": "failed"})
+  → get_pipeline_jobs({"project_id": "myorg/api-service", "pipeline_id": 84321})
+  → get_job_log({"project_id": "myorg/api-service", "job_id": 198744})
+
+╭──────────────────────────── Diagnosis ──────────────────────────────────╮
+│ Root cause: Missing REDIS_URL env var causes ConnectionError in test-unit│
+│ Category:   env_var_missing                                              │
+│ Affected:   test-unit                                                    │
+╰─────────────────────────────────────────────────────────────────────────╯
+
+┏━━━━━━━━━━━━━━━━━━ Proposed Fixes ━━━━━━━━━━━━━━━━━━┓
+┃ File            ┃ Description                ┃ Confidence ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ .gitlab-ci.yml  │ Add REDIS_URL + redis svc  │ high       │
+└─────────────────┴────────────────────────────┴────────────┘
+
+.gitlab-ci.yml diff:
+```diff
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -12,6 +12,8 @@ test-unit:
+   stage: test
+   variables:
+     DATABASE_URL: postgresql://postgres:postgres@postgres/testdb
++    REDIS_URL: redis://redis:6379/0
+   services:
+     - postgres:15
++    - redis:7
+```
+
+Full Analysis
+
+The job `test-unit` in pipeline #84321 failed during pytest collection. The log shows:
+
+    redis.exceptions.ConnectionError: Error 111 connecting to localhost:6379. Connection refused.
+
+This error originates at `app/cache.py:47` inside `get_redis_client()`, which reads
+`os.environ["REDIS_URL"]`. The variable exists in the local `.env` file but is absent
+from the CI job definition, so the Redis client falls back to localhost — where no
+server is running in the CI environment.
+
+Root cause: REDIS_URL not declared in .gitlab-ci.yml for test-unit.
+Fix: Add `REDIS_URL: redis://redis:6379/0` to the job variables block and add redis:7
+to the services list so the container starts alongside tests.
+
+Comment posted: https://gitlab.com/myorg/api-service/-/merge_requests/42#note_1234567
+Pipeline:       https://gitlab.com/myorg/api-service/-/pipelines/84321

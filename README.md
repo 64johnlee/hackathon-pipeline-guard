@@ -91,9 +91,37 @@ pipelineguard diagnose myorg/myrepo --direct
 pipelineguard watch myorg/myrepo --interval 60 --comment
 ```
 
+### 5. Webhook server (fully automated)
+
+Run PipelineGuard as a persistent service that receives GitLab pipeline events:
+
+```bash
+# Install web extras
+pip install 'pipelineguard[web]'
+
+# Start the server
+pipelineguard serve --port 8765 --comment
+```
+
+Then in GitLab: **Settings → Webhooks** → add `http://your-host:8765/webhook/gitlab`
+with the **Pipeline events** trigger. Every failed pipeline is diagnosed automatically
+and the result is posted as an MR comment — zero manual intervention.
+
+Optional: set `WEBHOOK_SECRET` env var + the same token in GitLab for request validation.
+
+```bash
+# Test with the included example payload
+curl -X POST http://localhost:8765/webhook/gitlab \
+  -H "Content-Type: application/json" \
+  -d @demo/webhook_payload_example.json
+# → {"status":"diagnosed","root_cause":"Missing REDIS_URL...","category":"env_var_missing"}
+```
+
 ---
 
 ## Example Output
+
+See [`demo/sample_output.txt`](demo/sample_output.txt) for a full annotated terminal session.
 
 ```
 ╭─ PipelineGuard · project myorg/backend · latest failed ─╮
@@ -154,6 +182,7 @@ diff:
 | MCP client | `mcp` (official Python SDK) |
 | GitLab fallback | `python-gitlab` |
 | CLI | `click` + `rich` |
+| Webhook server | `FastAPI` + `uvicorn` |
 
 ---
 
