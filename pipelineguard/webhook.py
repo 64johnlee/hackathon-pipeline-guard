@@ -1,6 +1,7 @@
 """GitLab webhook receiver — auto-diagnoses pipeline failures."""
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any
 
@@ -8,6 +9,8 @@ from rich.console import Console
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
 
 MAX_WEBHOOK_BODY_BYTES = 1_000_000  # GitLab payloads are <100 KB in practice
 
@@ -120,16 +123,32 @@ def make_app(
         version="0.1.0",
     )
 
+    # Add middleware to validate webhook token if secret is configured
+    if webhook_secret:
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request as StarletteRequest
+        from starlette.responses import JSONResponse
+
+        class GitLabTokenMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: StarletteRequest, call_next):
+                if request.url.path == "/webhook/gitlab" and request.method == "POST":
+                    token_header = request.headers.get("X-Gitlab-Token", "")
+                    if not hmac.compare_digest(webhook_secret.encode(), token_header.encode()):
+                        return JSONResponse(
+                            {"detail": "Invalid webhook token"}, status_code=401
+                        )
+                return await call_next(request)
+
+        app.add_middleware(GitLabTokenMiddleware)
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": "PipelineGuard"}
 
     @app.post("/webhook/gitlab")
     async def gitlab_webhook(payload: dict[str, Any]) -> dict[str, str]:
-        # Note: X-Gitlab-Token validation removed to resolve FastAPI 422 parameter binding issue.
-        # To re-enable webhook_secret validation, use a middleware or explicit Request parameter.
-        # Current workaround: GitLab webhooks should be configured with WEBHOOK_SECRET env var
-        # and CloudRun/deployment firewalls should restrict access to trusted sources.
+        # X-Gitlab-Token validation is handled by GitLabTokenMiddleware (if WEBHOOK_SECRET is set).
+        # This avoids FastAPI 422 parameter binding issues with the Request object.
 
         result = await handle_pipeline_event(payload, agent, post_comment=post_comment)
 
