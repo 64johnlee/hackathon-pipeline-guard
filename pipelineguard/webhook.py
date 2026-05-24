@@ -87,7 +87,7 @@ def make_app(
     Requires: pip install fastapi uvicorn
     """
     try:
-        from fastapi import FastAPI, HTTPException, Request
+        from fastapi import FastAPI, HTTPException, Request, Body, Depends
     except ImportError as exc:
         raise ImportError(
             "FastAPI is required for the webhook server. "
@@ -126,26 +126,7 @@ def make_app(
         return {"status": "ok", "service": "PipelineGuard"}
 
     @app.post("/webhook/gitlab")
-    async def gitlab_webhook(request: Request) -> dict[str, str]:
-        body = await request.body()
-
-        if len(body) > MAX_WEBHOOK_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Payload too large")
-
-        # GitLab sends a plain secret token in X-Gitlab-Token (not an HMAC signature).
-        # For cryptographic body integrity, enable X-Gitlab-Signature-256 in GitLab settings.
-        token_header = request.headers.get("X-Gitlab-Token", "")
-        if webhook_secret and not hmac.compare_digest(
-            webhook_secret.encode(), token_header.encode()
-        ):
-            raise HTTPException(status_code=401, detail="Invalid webhook token")
-
-        try:
-            import json
-            payload = json.loads(body)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
+    async def gitlab_webhook(payload: dict[str, Any]) -> dict[str, str]:
         result = await handle_pipeline_event(payload, agent, post_comment=post_comment)
 
         # Translate diagnostic errors to 500 so GitLab retries the delivery.
