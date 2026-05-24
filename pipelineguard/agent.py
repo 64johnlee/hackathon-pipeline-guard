@@ -31,16 +31,31 @@ class PipelineGuardAgent:
 
     Primary mode: Gemini agentic loop with GitLab MCP server tools.
     Fallback mode: single-shot Gemini call with pre-fetched log data.
+
+    Auth modes:
+      - AI Studio: pass gemini_api_key (GEMINI_API_KEY env var)
+      - Vertex AI / Agent Builder: pass gcp_project + gcp_location (no API key needed)
     """
 
     def __init__(
         self,
-        gemini_api_key: str,
-        gitlab_token: str,
+        gemini_api_key: str = "",
+        gitlab_token: str = "",
         gitlab_url: str = "https://gitlab.com",
         force_direct: bool = False,
+        # Vertex AI / Google Cloud Agent Builder
+        use_vertex: bool = False,
+        gcp_project: str = "",
+        gcp_location: str = "us-central1",
     ) -> None:
-        self._genai = genai.Client(api_key=gemini_api_key)
+        if use_vertex or (not gemini_api_key and gcp_project):
+            self._genai = genai.Client(
+                vertexai=True,
+                project=gcp_project,
+                location=gcp_location,
+            )
+        else:
+            self._genai = genai.Client(api_key=gemini_api_key)
         self._gitlab_token = gitlab_token
         self._gitlab_url = gitlab_url
         self._use_mcp = (not force_direct) and MCPBackend.is_available()

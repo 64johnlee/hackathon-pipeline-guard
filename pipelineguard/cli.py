@@ -37,12 +37,18 @@ def main(debug: bool) -> None:
               help="Post diagnostic comment on the associated MR.")
 @click.option("--direct", is_flag=True, default=False,
               help="Skip GitLab MCP server, use python-gitlab directly.")
-@click.option("--gemini-key", envvar="GEMINI_API_KEY", required=True,
-              help="Gemini API key ($GEMINI_API_KEY).")
+@click.option("--gemini-key", envvar="GEMINI_API_KEY", default="",
+              help="Gemini API key ($GEMINI_API_KEY). Not needed when --vertex is set.")
 @click.option("--gitlab-token", envvar="GITLAB_TOKEN", required=True,
               help="GitLab PAT with api + read_repository scopes ($GITLAB_TOKEN).")
 @click.option("--gitlab-url", envvar="GITLAB_URL", default="https://gitlab.com",
               show_default=True, help="GitLab base URL.")
+@click.option("--vertex", "use_vertex", is_flag=True, default=False,
+              help="Use Vertex AI (Google Cloud Agent Builder) instead of AI Studio.")
+@click.option("--gcp-project", envvar="GCP_PROJECT", default="",
+              help="GCP project ID for Vertex AI ($GCP_PROJECT).")
+@click.option("--gcp-location", envvar="GCP_LOCATION", default="us-central1",
+              show_default=True, help="Vertex AI region ($GCP_LOCATION).")
 def diagnose(
     project: str,
     pipeline: int | None,
@@ -51,16 +57,32 @@ def diagnose(
     gemini_key: str,
     gitlab_token: str,
     gitlab_url: str,
+    use_vertex: bool,
+    gcp_project: str,
+    gcp_location: str,
 ) -> None:
     """Diagnose the latest (or a specific) failed pipeline in PROJECT.
 
     PROJECT is a GitLab namespace/project path, e.g. myorg/myrepo.
+
+    Auth: set GEMINI_API_KEY for AI Studio, or GCP_PROJECT + --vertex for
+    Google Cloud Agent Builder (Vertex AI).
     """
+    if use_vertex and not gcp_project:
+        console.print("[bold red]Error:[/] --vertex requires --gcp-project / $GCP_PROJECT")
+        sys.exit(1)
+    if not use_vertex and not gemini_key:
+        console.print("[bold red]Error:[/] GEMINI_API_KEY is required (or use --vertex + GCP_PROJECT)")
+        sys.exit(1)
+
     agent = PipelineGuardAgent(
         gemini_api_key=gemini_key,
         gitlab_token=gitlab_token,
         gitlab_url=gitlab_url,
         force_direct=direct,
+        use_vertex=use_vertex,
+        gcp_project=gcp_project,
+        gcp_location=gcp_location,
     )
 
     try:
@@ -198,9 +220,16 @@ def watch(
 @click.option("--comment/--no-comment", default=True,
               help="Auto-post diagnosis comment on the failing MR.")
 @click.option("--direct", is_flag=True, default=False)
-@click.option("--gemini-key", envvar="GEMINI_API_KEY", required=True)
+@click.option("--gemini-key", envvar="GEMINI_API_KEY", default="",
+              help="Gemini API key ($GEMINI_API_KEY). Not needed when --vertex is set.")
 @click.option("--gitlab-token", envvar="GITLAB_TOKEN", required=True)
 @click.option("--gitlab-url", envvar="GITLAB_URL", default="https://gitlab.com")
+@click.option("--vertex", "use_vertex", is_flag=True, default=False,
+              help="Use Vertex AI (Google Cloud Agent Builder) instead of AI Studio.")
+@click.option("--gcp-project", envvar="GCP_PROJECT", default="",
+              help="GCP project ID for Vertex AI ($GCP_PROJECT).")
+@click.option("--gcp-location", envvar="GCP_LOCATION", default="us-central1",
+              show_default=True, help="Vertex AI region ($GCP_LOCATION).")
 def serve(
     host: str,
     port: int,
@@ -210,6 +239,9 @@ def serve(
     gemini_key: str,
     gitlab_token: str,
     gitlab_url: str,
+    use_vertex: bool,
+    gcp_project: str,
+    gcp_location: str,
 ) -> None:
     """Start a webhook server to auto-diagnose GitLab pipeline failures.
 
@@ -217,7 +249,17 @@ def serve(
     http://<host>:<port>/webhook/gitlab.
     When a pipeline fails PipelineGuard diagnoses it and posts a comment
     on the associated merge request.
+
+    On Cloud Run, PORT env var is used automatically as the bind port.
+    Auth: GEMINI_API_KEY for AI Studio, or GCP_PROJECT + --vertex for Vertex AI.
     """
+    if use_vertex and not gcp_project:
+        console.print("[bold red]Error:[/] --vertex requires --gcp-project / $GCP_PROJECT")
+        sys.exit(1)
+    if not use_vertex and not gemini_key:
+        console.print("[bold red]Error:[/] GEMINI_API_KEY is required (or use --vertex + GCP_PROJECT)")
+        sys.exit(1)
+
     try:
         import uvicorn
     except ImportError:
@@ -233,17 +275,103 @@ def serve(
         webhook_secret=webhook_secret,
         post_comment=comment,
         force_direct=direct,
+        use_vertex=use_vertex,
+        gcp_project=gcp_project,
+        gcp_location=gcp_location,
     )
 
     console.print(
         Panel(
             f"[bold cyan]PipelineGuard Webhook[/]\n"
             f"Endpoint: [green]http://{host}:{port}/webhook/gitlab[/]\n"
-            f"Post MR comment: [yellow]{'yes' if comment else 'no'}[/]",
+            f"Backend: [yellow]{'Vertex AI' if use_vertex else 'AI Studio'}[/]  "
+            f"Post comment: [yellow]{'yes' if comment else 'no'}[/]",
             border_style="cyan",
         )
     )
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+# ---------------------------------------------------------------------------
+# Deploy to Vertex AI Agent Engine (Google Cloud Agent Builder)
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--gcp-project", envvar="GCP_PROJECT", required=True,
+              help="GCP project ID ($GCP_PROJECT).")
+@click.option("--gcp-location", envvar="GCP_LOCATION", default="us-central1",
+              show_default=True, help="Vertex AI region ($GCP_LOCATION).")
+@click.option("--gitlab-token", envvar="GITLAB_TOKEN", required=True,
+              help="GitLab PAT baked into the deployed engine ($GITLAB_TOKEN).")
+@click.option("--gitlab-url", envvar="GITLAB_URL", default="https://gitlab.com",
+              show_default=True)
+@click.option("--display-name", default="PipelineGuard", show_default=True,
+              help="Display name for the Reasoning Engine resource.")
+def deploy(
+    gcp_project: str,
+    gcp_location: str,
+    gitlab_token: str,
+    gitlab_url: str,
+    display_name: str,
+) -> None:
+    """Deploy PipelineGuard to Vertex AI Agent Engine (Google Cloud Agent Builder).
+
+    Requires: pip install 'pipelineguard[vertex]'
+    Also requires Application Default Credentials: gcloud auth application-default login
+    """
+    try:
+        import vertexai
+        from vertexai.preview import reasoning_engines
+    except ImportError:
+        console.print(
+            "[red]Vertex AI SDK not found.[/] Install with:\n"
+            "  pip install 'pipelineguard[vertex]'"
+        )
+        sys.exit(1)
+
+    from .vertex_agent import PipelineGuardVertexApp
+
+    console.print(
+        Panel(
+            f"[bold cyan]Deploying PipelineGuard[/] to Vertex AI Agent Engine\n"
+            f"Project: [green]{gcp_project}[/]  Location: [yellow]{gcp_location}[/]",
+            border_style="cyan",
+        )
+    )
+
+    vertexai.init(project=gcp_project, location=gcp_location)
+
+    app = PipelineGuardVertexApp(
+        gitlab_token=gitlab_token,
+        gitlab_url=gitlab_url,
+        gcp_project=gcp_project,
+        gcp_location=gcp_location,
+    )
+
+    console.print("[dim]Creating Reasoning Engine (this takes ~2 min)…[/]")
+    remote_app = reasoning_engines.ReasoningEngine.create(
+        app,
+        requirements=[
+            "pipelineguard[web]>=0.1.0",
+            "google-cloud-aiplatform[reasoningengine]>=1.60.0",
+        ],
+        display_name=display_name,
+        description="AI-powered GitLab CI pipeline diagnostics using Gemini 2.0 Flash",
+    )
+
+    resource_name = remote_app.resource_name
+    console.print(
+        Panel(
+            f"[bold green]Deployed![/]\n"
+            f"Resource: [cyan]{resource_name}[/]\n\n"
+            f"Query it:\n"
+            f"  from vertexai.preview import reasoning_engines\n"
+            f"  app = reasoning_engines.ReasoningEngine('{resource_name}')\n"
+            f"  app.query(project='myorg/myrepo')",
+            title="[bold cyan]Agent Engine[/]",
+            border_style="green",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

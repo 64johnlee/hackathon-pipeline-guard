@@ -63,9 +63,11 @@ Node.js >=18 is required for the GitLab MCP server (primary mode). Skip with `--
 
 ```bash
 cp .env.example .env
-# Edit .env with your keys:
-#   GEMINI_API_KEY  — https://aistudio.google.com/
-#   GITLAB_TOKEN    — GitLab PAT with api + read_repository scopes
+# Edit .env — choose one auth mode:
+#   AI Studio:  GEMINI_API_KEY  — https://aistudio.google.com/
+#   Vertex AI:  GCP_PROJECT + GCP_LOCATION (see "Agent Builder" section below)
+#
+#   GITLAB_TOKEN  — GitLab PAT with api + read_repository scopes
 ```
 
 ### 3. Diagnose a failed pipeline
@@ -115,6 +117,99 @@ curl -X POST http://localhost:8765/webhook/gitlab \
   -H "Content-Type: application/json" \
   -d @demo/webhook_payload_example.json
 # → {"status":"diagnosed","root_cause":"Missing REDIS_URL...","category":"env_var_missing"}
+```
+
+---
+
+## Deploy to Cloud Run (hosted URL)
+
+The fastest way to get a live, public endpoint for the hackathon submission:
+
+```bash
+export GCP_PROJECT=my-gcp-project
+export GITLAB_TOKEN=glpat-...
+# optional: export GEMINI_API_KEY=... (uses AI Studio; omit to use Vertex AI)
+# optional: export WEBHOOK_SECRET=my-secret
+
+bash deploy_cloudrun.sh
+```
+
+The script:
+1. Creates an Artifact Registry repo
+2. Builds the container with **Cloud Build**
+3. Stores secrets in **Secret Manager**
+4. Deploys to **Cloud Run** (min 0 → scales to 0 when idle, free tier friendly)
+5. Prints the live URL
+
+```
+======================================================
+  PipelineGuard deployed!
+  URL:      https://pipeline-guard-xxxx-uc.a.run.app
+  Webhook:  https://pipeline-guard-xxxx-uc.a.run.app/webhook/gitlab
+  Health:   https://pipeline-guard-xxxx-uc.a.run.app/health
+======================================================
+```
+
+Then in GitLab: **Settings → Webhooks** → paste the webhook URL, enable **Pipeline events**.
+
+---
+
+## Google Cloud Agent Builder (Vertex AI)
+
+PipelineGuard runs natively on **Vertex AI Agent Engine** (Reasoning Engine), the managed
+serving platform in Google Cloud Agent Builder.  This gives you a scalable, serverless
+deployment without managing containers.
+
+### Run locally with Vertex AI backend
+
+Instead of an API key, authenticate with your GCP project:
+
+```bash
+gcloud auth application-default login
+
+# Set env vars
+export GCP_PROJECT=my-gcp-project
+export GCP_LOCATION=us-central1
+export GITLAB_TOKEN=glpat-...
+
+# Same CLI — just add --vertex
+pipelineguard diagnose myorg/myrepo --vertex
+pipelineguard serve --vertex --port 8765
+```
+
+### Deploy to Agent Engine
+
+```bash
+pip install 'pipelineguard[vertex]'
+
+pipelineguard deploy \
+  --gcp-project my-gcp-project \
+  --gcp-location us-central1 \
+  --gitlab-token glpat-...
+```
+
+This packages PipelineGuard as a **Reasoning Engine** resource in your project.  Once
+deployed you can query it from any Google Cloud environment — Cloud Run, Cloud Functions,
+other agents — without shipping your own container:
+
+```python
+import vertexai
+from vertexai.preview import reasoning_engines
+
+vertexai.init(project="my-gcp-project", location="us-central1")
+app = reasoning_engines.ReasoningEngine("projects/.../reasoningEngines/...")
+result = app.query(project="myorg/myrepo")
+print(result["root_cause"])
+```
+
+Or use the Python API directly to deploy programmatically:
+
+```python
+from pipelineguard.vertex_agent import PipelineGuardVertexApp
+
+app = PipelineGuardVertexApp(gitlab_token="glpat-...", gcp_project="my-project")
+app.set_up()
+result = app.query(project="myorg/myrepo")
 ```
 
 ---

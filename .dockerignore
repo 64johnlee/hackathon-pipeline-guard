@@ -1,0 +1,9 @@
+.git
+.env
+*.pyc
+__pycache__
+.pytest_cache
+demo/*.mp4
+*.egg-info
+dist/
+build/

@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["fastapi>=0.110.0", "uvicorn>=0.29.0"]
+vertex = ["google-cloud-aiplatform[reasoningengine]>=1.60.0"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "pytest-mock>=3.12"]
 
 [project.scripts]
