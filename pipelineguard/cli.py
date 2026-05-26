@@ -462,3 +462,99 @@ def investigate(
 
     console.print("\n[bold]Full Analysis[/]")
     console.print(Markdown(report.full_analysis))
+
+
+@splunk.command()
+@click.argument("project")
+@click.option("--since", default="-7d", show_default=True,
+              help="Ingest pipelines updated since this point "
+                   "(`-7d`, `-24h`, or ISO8601 like 2026-05-20T00:00:00Z).")
+@click.option("--max-pipelines", default=200, type=int, show_default=True,
+              help="Hard cap on pipelines to ingest in one run.")
+@click.option("--hec-url", envvar="SPLUNK_HEC_URL",
+              default="https://localhost:8088", show_default=True,
+              help="Splunk HEC base URL ($SPLUNK_HEC_URL).")
+@click.option("--hec-token", envvar="SPLUNK_HEC_TOKEN", required=True,
+              help="Splunk HEC token ($SPLUNK_HEC_TOKEN).")
+@click.option("--index", default="pipelineguard", show_default=True,
+              help="Splunk index to write into.")
+@click.option("--no-verify-ssl", is_flag=True, default=False,
+              help="Disable SSL verification (for local Splunk with self-signed cert).")
+@click.option("--log-tail-lines", default=50, type=int, show_default=True,
+              help="Lines of failed-job log tail to attach to each job event.")
+@click.option("--gitlab-token", envvar="GITLAB_TOKEN", required=True,
+              help="GitLab PAT with api + read_repository scopes ($GITLAB_TOKEN).")
+@click.option("--gitlab-url", envvar="GITLAB_URL", default="https://gitlab.com",
+              show_default=True, help="GitLab base URL.")
+def ingest(
+    project: str,
+    since: str,
+    max_pipelines: int,
+    hec_url: str,
+    hec_token: str,
+    index: str,
+    no_verify_ssl: bool,
+    log_tail_lines: int,
+    gitlab_token: str,
+    gitlab_url: str,
+) -> None:
+    """Ingest GitLab pipeline + job events for PROJECT into Splunk via HEC.
+
+    PROJECT is a GitLab namespace/project path, e.g. myorg/myrepo.
+
+    After ingest, query in Splunk:
+        index=pipelineguard sourcetype="gitlab:job" status=failed
+        | stats count by stage, name
+    """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    from .ingesters import GitLabToSplunkIngester
+
+    ingester = GitLabToSplunkIngester(
+        gitlab_token=gitlab_token,
+        gitlab_url=gitlab_url,
+        hec_url=hec_url,
+        hec_token=hec_token,
+        index=index,
+        verify_ssl=not no_verify_ssl,
+        log_tail_lines=log_tail_lines,
+    )
+
+    console.print(
+        Panel(
+            f"[bold cyan]GitLab → Splunk[/]\n"
+            f"Project: [green]{project}[/]  Since: [yellow]{since}[/]\n"
+            f"HEC: [yellow]{hec_url}[/]  Index: [yellow]{index}[/]",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Ingesting…", total=None)
+            stats = ingester.ingest_project(
+                project_path=project,
+                since=since,
+                max_pipelines=max_pipelines,
+            )
+            progress.update(task, description="Done")
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/] {exc}")
+        sys.exit(1)
+
+    table = Table(title="Ingest summary", show_lines=False)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_row("Pipelines", str(stats.pipelines))
+    table.add_row("Jobs", str(stats.jobs))
+    table.add_row("Events posted to HEC", str(stats.events_posted))
+    if stats.hec_errors:
+        table.add_row("[red]HEC errors[/]", f"[red]{stats.hec_errors}[/]")
+    console.print(table)
+
+    if stats.hec_errors:
+        sys.exit(1)
