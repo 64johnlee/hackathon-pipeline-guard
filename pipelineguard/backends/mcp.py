@@ -1,9 +1,9 @@
-"""MCP backend — connects to the official GitLab MCP server via subprocess."""
+"""MCP backend — spawns the bundled PipelineGuard MCP server as a stdio subprocess."""
 from __future__ import annotations
 
 import logging
 import os
-import shutil
+import sys
 from typing import Any
 
 from google.genai import types
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 class MCPBackend:
     """
-    Manages a `@gitlab-org/mcp-gitlab` subprocess (via npx) and exposes
-    its tools as Gemini FunctionDeclaration objects for the agent loop.
+    Manages the bundled `pipelineguard.mcp_server` subprocess and exposes its
+    tools as Gemini FunctionDeclaration objects for the agent loop.
     """
 
     def __init__(self, gitlab_token: str, gitlab_url: str = "https://gitlab.com") -> None:
@@ -37,8 +37,8 @@ class MCPBackend:
 
     @staticmethod
     def is_available() -> bool:
-        """Return True if both npx (Node) and the mcp package are present."""
-        return _MCP_AVAILABLE and shutil.which("npx") is not None
+        """Return True if the mcp package is installed (the server ships with this package)."""
+        return _MCP_AVAILABLE
 
     async def __aenter__(self) -> "MCPBackend":
         if not _MCP_AVAILABLE:
@@ -48,15 +48,16 @@ class MCPBackend:
             )
         env = {
             **os.environ,
+            "GITLAB_PERSONAL_ACCESS_TOKEN": self._gitlab_token,
             "GITLAB_TOKEN": self._gitlab_token,
             "GITLAB_URL": self._gitlab_url,
         }
         server_params = StdioServerParameters(
-            command="npx",
-            args=["-y", "@gitlab-org/mcp-gitlab"],
+            command=sys.executable,
+            args=["-m", "pipelineguard.mcp_server"],
             env=env,
         )
-        logger.info("Starting GitLab MCP server via npx (first run may take ~30s to download)…")
+        logger.info("Starting PipelineGuard MCP server (pipelineguard.mcp_server)…")
         self._stdio_cm = stdio_client(server_params)
         read, write = await self._stdio_cm.__aenter__()
         self._session = ClientSession(read, write)

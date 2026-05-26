@@ -28,6 +28,7 @@ dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "pytest-mock>=3.12"]
 
 [project.scripts]
 pipelineguard = "pipelineguard.cli:main"
+pipelineguard-mcp = "pipelineguard.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pipelineguard"]

@@ -20,7 +20,7 @@ from .splunk_prompts import SPLUNK_SYSTEM_PROMPT, build_splunk_prompt
 logger = logging.getLogger(__name__)
 console = Console()
 
-_GEMINI_MODEL = "gemini-2.0-flash"
+_GEMINI_MODEL = "gemini-2.5-flash"
 _MAX_TOOL_ITERATIONS = 15
 
 

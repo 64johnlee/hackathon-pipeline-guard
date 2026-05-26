@@ -1,13 +1,15 @@
 # PipelineGuard
 
-> AI-powered GitLab CI pipeline diagnostics using Gemini 2.0 Flash + GitLab MCP Server
+> AI-powered GitLab CI pipeline diagnostics using Gemini 2.5 Flash + a purpose-built MCP server.
 
 PipelineGuard watches your GitLab CI pipelines. When one fails, it:
 
-1. **Fetches** job logs via the GitLab MCP server
-2. **Analyzes** root cause with Gemini 2.0 Flash (not just "build failed" — the *exact* reason)
+1. **Fetches** job logs via a bundled stdio MCP server (`pipelineguard.mcp_server`)
+2. **Analyzes** root cause with Gemini 2.5 Flash (not just "build failed" — the *exact* reason)
 3. **Proposes** a targeted fix with a unified diff
 4. **Comments** the findings on the associated merge request
+
+Verified end-to-end against a real failed `gitlab-org/cli` pipeline: **~46 seconds, 2 tool calls, correct root cause identified** (config error: malformed git ref). The agentic loop terminates well under its 15-iteration safety cap.
 
 Built for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.com) — GitLab track.
 
@@ -23,27 +25,28 @@ User / CI Webhook
 │  PipelineGuardAgent  (pipelineguard/agent.py)   │
 │                                                 │
 │  ┌──────────────────┐    ┌──────────────────┐   │
-│  │  Gemini 2.0 Flash│◄──►│  Tool Call Loop  │   │
+│  │  Gemini 2.5 Flash│◄──►│  Tool Call Loop  │   │
 │  │  (google-genai)  │    │  (up to 15 iters)│   │
 │  └──────────────────┘    └────────┬─────────┘   │
 └───────────────────────────────────┼─────────────┘
-                                    │ function calls
+                                    │ MCP function calls (stdio)
                                     ▼
                     ┌───────────────────────────────┐
-                    │  GitLab MCP Server (npx)      │
-                    │  @gitlab-org/mcp-gitlab        │
+                    │  pipelineguard.mcp_server     │
+                    │  (bundled, ships with pkg)    │
                     │                               │
                     │  list_pipelines               │
                     │  get_pipeline_jobs            │
                     │  get_job_log                  │
-                    │  create_note (MR comment)     │
+                    │  find_merge_request_by_sha    │
+                    │  create_merge_request_note    │
                     └───────────────────────────────┘
                                     │
                                     ▼
                             GitLab API (HTTPS)
 ```
 
-**Fallback mode** (`--direct`): skips the MCP server and uses `python-gitlab` directly — useful when Node.js is unavailable.
+**Fallback mode** (`--direct`): skips the MCP server and uses `python-gitlab` directly in-process — single Gemini call instead of an agentic loop. Useful when MCP stdio subprocesses aren't allowed by the host (e.g. some sandboxed CI runners).
 
 ---
 
@@ -57,7 +60,7 @@ cd hackathon-pipeline-guard
 pip install -e .
 ```
 
-Node.js >=18 is required for the GitLab MCP server (primary mode). Skip with `--direct` if unavailable.
+No external services to install — the MCP server is a Python module that ships with the package. `pip install` is all you need (Python ≥ 3.10).
 
 ### 2. Configure
 
@@ -68,6 +71,7 @@ cp .env.example .env
 #   Vertex AI:  GCP_PROJECT + GCP_LOCATION (see "Agent Builder" section below)
 #
 #   GITLAB_TOKEN  — GitLab PAT with api + read_repository scopes
+#                   (also exported as GITLAB_PERSONAL_ACCESS_TOKEN to the MCP server)
 ```
 
 ### 3. Diagnose a failed pipeline
@@ -246,11 +250,13 @@ diff:
 
 ## How It Works
 
-1. **MCP mode** (primary): PipelineGuard starts `@gitlab-org/mcp-gitlab` as a subprocess. Gemini 2.0 Flash receives the MCP server's tools as `FunctionDeclaration` objects and autonomously decides which to call — listing pipelines, fetching job logs, reading `.gitlab-ci.yml` — until it has enough context to diagnose the failure.
+1. **MCP mode** (primary): PipelineGuard spawns `pipelineguard.mcp_server` as a stdio subprocess (`python -m pipelineguard.mcp_server`). The server exposes 5 GitLab pipeline tools — `list_pipelines`, `get_pipeline_jobs`, `get_job_log`, `find_merge_request_by_sha`, `create_merge_request_note` — implemented on top of `python-gitlab`. Gemini 2.5 Flash receives those tools as `FunctionDeclaration` objects and autonomously decides which to call until it has enough context to diagnose the failure. In our benchmark against `gitlab-org/cli` pipeline #2552952663, the loop terminated in 2 tool calls.
 
-2. **Structured output**: The system prompt instructs Gemini to produce a natural-language explanation followed by a machine-readable JSON block, parsed into a typed `DiagnosisReport` with `FixProposal` objects.
+2. **Structured output**: The system prompt instructs Gemini to produce a natural-language explanation followed by a machine-readable JSON block, parsed into a typed `DiagnosisReport` with `FixProposal` objects. A regex extractor handles the occasional case where the model wraps the JSON in stray prose.
 
-3. **Direct mode** (fallback): All data is fetched upfront via `python-gitlab` and packed into a single Gemini prompt.
+3. **Direct mode** (`--direct`): All pipeline data is fetched upfront with `python-gitlab` in-process and packed into a single Gemini call — no MCP subprocess, no agentic loop. Same diagnostic quality, ~7s faster, but loses the per-tool granularity that MCP provides for tracing and reuse.
+
+4. **Why a bundled MCP server?** GitLab does not yet ship an official MCP server with pipeline-introspection tools. Rather than depend on third-party packages with mismatched tool surfaces, PipelineGuard ships its own — minimal, purpose-built for the agent that consumes it, and reusable from any MCP-compatible client (Claude Desktop, Cursor, etc.).
 
 ---
 
@@ -272,10 +278,11 @@ diff:
 
 | Component | Library |
 |---|---|
-| LLM | Gemini 2.0 Flash via `google-genai` |
-| GitLab tools | `@gitlab-org/mcp-gitlab` MCP server |
+| LLM | Gemini 2.5 Flash via `google-genai` (AI Studio or Vertex AI) |
+| Cloud deployment | Cloud Run + Artifact Registry; Vertex AI Agent Engine for hosted agent |
+| MCP server | `pipelineguard.mcp_server` (bundled, FastMCP / Python SDK) |
 | MCP client | `mcp` (official Python SDK) |
-| GitLab fallback | `python-gitlab` |
+| GitLab API | `python-gitlab` (used by both MCP server and `--direct` fallback) |
 | CLI | `click` + `rich` |
 | Webhook server | `FastAPI` + `uvicorn` |
 
