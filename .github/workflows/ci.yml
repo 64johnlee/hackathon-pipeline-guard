@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,web]"
+
+      - name: Syntax / import check
+        run: python -m compileall -q pipelineguard
+
+      - name: CLI smoke test
+        env:
+          GITLAB_TOKEN: smoke
+          GEMINI_API_KEY: smoke
+          SPLUNK_MCP_TOKEN: smoke
+          SPLUNK_HEC_TOKEN: smoke
+        run: |
+          pipelineguard --help
+          pipelineguard diagnose --help
+          pipelineguard watch --help
+          pipelineguard serve --help
+          pipelineguard splunk --help
+          pipelineguard splunk investigate --help
+          pipelineguard splunk ingest --help
+
+      - name: Run tests (if any)
+        run: |
+          # pytest exits 5 when no tests are collected; treat as pass.
+          set +e
+          pytest --tb=short -q
+          status=$?
+          set -e
+          if [ "$status" = "5" ]; then
+            echo "No tests collected (exit 5) — passing."
+            exit 0
+          fi
+          exit $status
