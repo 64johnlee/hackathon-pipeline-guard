@@ -363,12 +363,17 @@ def make_app(
         proj = body.get("project", "")
         pid = body.get("pipeline_id")
         if not proj:
-            from fastapi import HTTPException
             raise HTTPException(status_code=422, detail="project is required")
+        pipeline_id: int | None = None
+        if pid is not None:
+            try:
+                pipeline_id = int(pid)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail="pipeline_id must be an integer")
         try:
             report = await agent.diagnose(
                 project=proj,
-                pipeline_id=int(pid) if pid is not None else None,
+                pipeline_id=pipeline_id,
                 post_comment=False,
             )
             return {
@@ -387,8 +392,9 @@ def make_app(
                 ],
                 "full_analysis": report.full_analysis,
             }
+        except HTTPException:
+            raise
         except Exception as exc:
-            from fastapi import HTTPException
             raise HTTPException(status_code=500, detail=str(exc))
 
     @app.post("/webhook/gitlab")
