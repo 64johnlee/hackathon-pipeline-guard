@@ -11,7 +11,7 @@ SplunkGuard is a Gemini-driven agent that investigates operational questions aga
 | Mode | Splunk | Time | Notes |
 |---|---|---|---|
 | `--direct` (REST) | 10.4.0 | **8.48 s** | 1 Gemini call · same structured output |
-| **MCP** (App #7931) | **9.4.11** | **37.84 s** | Gemini autonomously calls 2 MCP tools · deeper analysis (identifies specific failing job names like `code_navigation_golang`, infers `is_ongoing: true`) |
+| **MCP** (App #7931) | 10.4.0 *or* 9.4.11 | **37.84 s** | Gemini autonomously calls 2 MCP tools · deeper analysis (identifies specific failing job names like `code_navigation_golang`, infers `is_ongoing: true`). Verified on both Splunk versions when installed with `docker restart` (not `splunk restart`) |
 
 See [Benchmark](#benchmark) for full numbers.
 
@@ -64,8 +64,8 @@ Ingestion path (CI/CD → Splunk):  pipelineguard/ingesters/gitlab_to_splunk.py
 
 **On the MCP integration.** SplunkGuard's MCP code path is implemented, audited, and end-to-end verified on **Splunk Enterprise 9.4.11 + Splunkbase App #7931 v1.1.0**. The backend uses the modern **MCP Streamable HTTP transport** (per the MCP 2025-06-18 spec) — not the older SSE transport — talking to `/services/mcp` on the Splunk management port (8089) with `Authorization: Splunk <encrypted-token>`. Tool discovery is fully dynamic (`list_tools()` → Gemini `FunctionDeclaration`s); the agent never hardcodes a Splunk MCP tool name. Two gotchas worth knowing if you reproduce:
 
-1. **Use Splunk 9.4 for now, not 10.4.** On `splunk/splunk:latest` (currently 10.4.0), the MCP app installs cleanly but splunkd dies after restart and never comes back. Same `.tgz` works on `splunk/splunk:9.4`. App #7931 v1.1.0 was likely built and tested against the 9.x line.
-2. **`docker restart` after install, not `splunk restart`.** The in-container `splunk restart` command receives an interrupt signal but never re-spawns the daemon. Use `docker restart splunk` instead — Docker's entrypoint script handles the boot path properly.
+1. **`docker restart` after install, not `splunk restart`.** This is the *only* gotcha — and it's an issue with the Splunk Docker image's entrypoint script, not with App #7931 itself. The in-container `splunk restart` command receives an interrupt signal but never re-spawns the daemon (splunkd stays dead). Use `docker restart splunk` instead and Docker's entrypoint correctly re-boots splunkd with the newly-installed app.
+2. **Splunk 10.4 *and* 9.4 both work.** We initially reported 10.4 as broken — that was a misdiagnosis. The real root cause was `splunk restart` (point 1 above). After switching to `docker restart`, App #7931 v1.1.0 installs and boots cleanly on `splunk/splunk:latest` (verified on 10.4.0) as well as `splunk/splunk:9.4` (verified on 9.4.11). Either image is fine — `:latest` is the easiest reproduce.
 
 ---
 
@@ -111,24 +111,24 @@ curl -sk -u "admin:changeme" -X POST \
   -d "name=pipelineguard&datatype=event"
 ```
 
-> **For the MCP path** (`--mcp`, default), use Splunk **9.4** instead of latest:
+> **For the MCP path** (default when `--direct` is not passed):
 >
 > ```bash
-> # Install Splunk 9.4 (App #7931 v1.1.0 + Splunk 10.4 currently conflict)
+> # Splunk Enterprise (either splunk/splunk:latest or splunk/splunk:9.4 work)
 > docker run -d --name splunk \
 >   -p 8000:8000 -p 8088:8088 -p 8089:8089 \
 >   -e SPLUNK_PASSWORD=changeme \
 >   -e SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com \
 >   -e SPLUNK_START_ARGS=--accept-license \
->   splunk/splunk:9.4
+>   splunk/splunk:latest
 >
 > # Once healthy (~60s), install Splunkbase App #7931 (the .tgz can be
 > # downloaded after logging into splunkbase.splunk.com):
 > docker cp splunk_mcp_server.tgz splunk:/tmp/
 > docker exec -u splunk splunk /opt/splunk/bin/splunk install app \
 >   /tmp/splunk_mcp_server.tgz -auth admin:changeme
-> # IMPORTANT: restart the *container*, not splunkd. `splunk restart` doesn't
-> # come back up properly in Docker; `docker restart` does.
+> # IMPORTANT: restart the *container*, not splunkd. `splunk restart` kills
+> # splunkd but never re-spawns it in Docker; `docker restart` does.
 > docker restart splunk
 >
 > # Generate the MCP token:
@@ -247,13 +247,13 @@ stats count by project, name, status, failure_reason | sort -count",
 |---|---|---|
 | **Ingest** (`pipelineguard splunk ingest gitlab-org/cli --since -7d --max-pipelines 30`) | **37 s** | 30 pipelines + 264 jobs = 294 HEC events posted to Splunk |
 | **Investigate — `--direct`** (REST, 1 Gemini call) | **8.48 s** | Splunk 10.4.0; pre-fetches index list + 200-event sample, one Gemini call returns structured report |
-| **Investigate — MCP** (App #7931, agentic loop) | **37.84 s** | Splunk 9.4.11 + Splunkbase App #7931 v1.1.0; Gemini autonomously calls 2 MCP tools and produces a more nuanced report (identifies specific job names like `code_navigation_golang`, infers `is_ongoing: true`, returns 3 SPL recommendations vs. 2 in direct mode) |
+| **Investigate — MCP** (App #7931, agentic loop) | **37.84 s** | Splunk 10.4.0 or 9.4.11 + Splunkbase App #7931 v1.1.0; Gemini autonomously calls 2 MCP tools and produces a more nuanced report (identifies specific job names like `code_navigation_golang`, infers `is_ongoing: true`, returns 3 SPL recommendations vs. 2 in direct mode). Use `docker restart` after installing the app — `splunk restart` is the foot-gun |
 | **End-to-end** (cold Splunk + ingest + investigate, `--direct` path) | **~45 s** | From "blank Splunk" to "first answer" |
 
 **Environment:**
-- `--direct` path: Splunk Enterprise 10.4.0 (Docker, `splunk/splunk:latest`)
-- MCP path: Splunk Enterprise 9.4.11 (Docker, `splunk/splunk:9.4`) + Splunkbase App #7931 v1.1.0
-- Both paths: Gemini 2.5 Flash via Google AI Studio (free tier), Python 3.13.
+- Splunk Enterprise 10.4.0 *or* 9.4.11 (Docker, `splunk/splunk:latest` or `splunk/splunk:9.4`)
+- Splunkbase App #7931 v1.1.0 (for the MCP path; installed via the bundled `.tgz` then `docker restart splunk`)
+- Gemini 2.5 Flash via Google AI Studio (free tier), Python 3.13.
 
 The MCP path is roughly 4× slower than `--direct` because it gives Gemini real tool-call latency budget to iterate; the trade-off is deeper, more specific findings. Pick `--direct` for sub-10-second loops and `--mcp` (default when `--direct` not passed) for richer single-shot investigations.
 
