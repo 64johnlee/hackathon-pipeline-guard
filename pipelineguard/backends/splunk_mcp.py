@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import ssl
 from typing import Any
 
 import httpx
@@ -74,15 +73,27 @@ class SplunkMCPBackend:
             "Content-Type": "application/json",
         }
 
-        # Build SSL context for self-signed certs in local Splunk dev instances
-        ssl_context: ssl.SSLContext | bool = self._verify_ssl
-        if not self._verify_ssl:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+        verify_ssl = self._verify_ssl
+
+        def _httpx_factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            return httpx.AsyncClient(
+                verify=verify_ssl,
+                headers=headers,
+                timeout=timeout if timeout is not None else httpx.Timeout(30.0),
+                auth=auth,
+                follow_redirects=True,
+            )
 
         logger.info("Connecting to Splunk MCP Server at %s …", self._splunk_url)
-        self._sse_cm = sse_client(url=self._splunk_url, headers=headers)
+        self._sse_cm = sse_client(
+            url=self._splunk_url,
+            headers=headers,
+            httpx_client_factory=_httpx_factory,
+        )
         read, write = await self._sse_cm.__aenter__()
         self._session = ClientSession(read, write)
         await self._session.__aenter__()

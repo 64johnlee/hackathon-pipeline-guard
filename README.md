@@ -13,6 +13,8 @@ Verified end-to-end against a real failed `gitlab-org/cli` pipeline: **~46 secon
 
 Built for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.com) — GitLab track.
 
+> **Looking for the Splunk side?** This repo also ships **SplunkGuard** — a Gemini agent driven by the official Splunk MCP Server (Splunkbase App #7931) for natural-language observability investigations. See [SPLUNK.md](./SPLUNK.md) (submitted to the [Splunk Agentic Ops Hackathon](https://splunk.devpost.com/) — Observability track).
+
 ---
 
 ## Architecture
