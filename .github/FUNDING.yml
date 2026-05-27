@@ -1,0 +1,8 @@
+# GitHub Funding configuration — see
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+#
+# When you enable GitHub Sponsors at https://github.com/sponsors/account,
+# uncomment the line below to activate the "Sponsor" button on this repo.
+# github: 64johnlee
+
+custom: ["https://github.com/64johnlee"]
