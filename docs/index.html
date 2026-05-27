@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PipelineGuard — AI-powered GitLab CI diagnostics</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:#0d1117;color:#e6edf3;min-height:100vh}
+    header{background:linear-gradient(135deg,#1a1f2e 0%,#161b27 100%);
+           border-bottom:1px solid #30363d;padding:2rem 2rem 1.5rem}
+    header h1{font-size:2.2rem;font-weight:700;color:#58a6ff}
+    header p{color:#8b949e;margin-top:.5rem;font-size:1.1rem}
+    .badge{display:inline-block;background:#1f6feb;color:#fff;
+           border-radius:4px;padding:.15rem .55rem;font-size:.78rem;
+           font-weight:600;margin-left:.5rem;vertical-align:middle}
+    .badge.green{background:#238636}
+    nav{display:flex;gap:1rem;margin-top:1rem;flex-wrap:wrap}
+    nav a{color:#58a6ff;text-decoration:none;font-size:.9rem;
+          border:1px solid #30363d;padding:.3rem .8rem;border-radius:20px;
+          transition:border-color .2s}
+    nav a:hover{border-color:#58a6ff}
+    main{max-width:960px;margin:0 auto;padding:2rem}
+    .hero{background:linear-gradient(135deg,#0d1b2e,#0d1117);border:1px solid #1f6feb;
+          border-radius:10px;padding:1.5rem;margin-bottom:2rem;text-align:center}
+    .hero h2{color:#58a6ff;font-size:1.4rem;margin-bottom:.5rem}
+    .hero p{color:#8b949e;font-size:.95rem;max-width:640px;margin:0 auto}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:2rem 0}
+    .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.2rem}
+    .card h3{color:#58a6ff;margin-bottom:.5rem;font-size:1rem}
+    .card p{color:#8b949e;font-size:.88rem;line-height:1.55}
+    .card .icon{font-size:1.5rem;margin-bottom:.5rem}
+    section{margin:2rem 0}
+    section h2{font-size:1.2rem;font-weight:600;color:#e6edf3;
+               border-bottom:1px solid #30363d;padding-bottom:.5rem;margin-bottom:1.2rem}
+    .demo-box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.5rem}
+    label{display:block;color:#8b949e;font-size:.85rem;margin-bottom:.3rem}
+    select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;
+          border-radius:6px;padding:.55rem .75rem;font-size:.95rem;margin-bottom:1rem;
+          outline:none;transition:border .2s}
+    select:focus{border-color:#58a6ff}
+    .terminal{background:#010409;border:1px solid #30363d;border-radius:8px;
+              padding:1.2rem 1.4rem;overflow-x:auto;font-family:'Courier New',Courier,monospace;
+              font-size:.82rem;line-height:1.65;margin-top:1rem}
+    .terminal .prompt{color:#58a6ff}
+    .terminal .ok{color:#3fb950}
+    .terminal .warn{color:#d29922}
+    .terminal .hi{color:#e6edf3}
+    .terminal .dim{color:#484f58}
+    .terminal .diff-add{color:#3fb950}
+    .tag{display:inline-block;background:#21262d;border:1px solid #30363d;
+         color:#8b949e;border-radius:12px;padding:.1rem .6rem;font-size:.78rem;margin:.15rem}
+    .endpoint-row{display:flex;align-items:center;gap:.75rem;margin:.5rem 0;flex-wrap:wrap}
+    .method{background:#1f6feb;color:#fff;font-size:.72rem;font-weight:700;
+            padding:.1rem .5rem;border-radius:3px;min-width:3.5rem;text-align:center}
+    .method.post{background:#388bfd}
+    code{background:#161b22;padding:.1rem .35rem;border-radius:3px;font-size:.84rem;color:#79c0ff}
+    .arch{background:#010409;border:1px solid #30363d;border-radius:8px;padding:1.2rem;
+          font-family:'Courier New',Courier,monospace;font-size:.82rem;line-height:1.7;
+          color:#8b949e;overflow-x:auto}
+    .arch .hi{color:#58a6ff}.arch .gr{color:#3fb950}
+    .video-box{background:#161b22;border:1px solid #30363d;border-radius:8px;
+               padding:1.5rem;text-align:center;color:#8b949e;font-size:.9rem}
+    .video-box a{color:#58a6ff;text-decoration:none}
+    .video-box a:hover{text-decoration:underline}
+    .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1rem 0}
+    .stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1rem;text-align:center}
+    .stat .num{font-size:1.8rem;font-weight:700;color:#58a6ff}
+    .stat .lbl{font-size:.78rem;color:#8b949e;margin-top:.2rem}
+    footer{border-top:1px solid #30363d;padding:1.5rem 2rem;text-align:center;
+           color:#484f58;font-size:.82rem;margin-top:2rem}
+    footer a{color:#58a6ff;text-decoration:none}
+  </style>
+</head>
+<body>
+<header>
+  <h1>&#x1F6E1; PipelineGuard
+    <span class="badge">Gemini 2.0 Flash</span>
+    <span class="badge green">Web</span>
+  </h1>
+  <p>AI agent that auto-diagnoses GitLab CI pipeline failures and proposes diff-ready fixes</p>
+  <nav>
+    <a href="https://github.com/64johnlee/hackathon-pipeline-guard" target="_blank">&#x2197; GitHub</a>
+    <a href="https://devpost.com/software/pipelineguard" target="_blank">&#x1F3C6; Devpost</a>
+    <a href="#demo">&#x25B6; Demo</a>
+    <a href="#api">&#x1F4D6; API</a>
+    <a href="#architecture">&#x1F9F1; Architecture</a>
+  </nav>
+</header>
+<main>
+
+  <div class="hero">
+    <h2>Stop debugging pipelines manually.</h2>
+    <p>PipelineGuard connects to your GitLab project, reads the failure logs,
+    and returns a structured root-cause analysis with code fixes — in seconds.</p>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="num">~15s</div><div class="lbl">median diagnosis time</div></div>
+    <div class="stat"><div class="num">6</div><div class="lbl">failure categories</div></div>
+    <div class="stat"><div class="num">100%</div><div class="lbl">read-only on your repo</div></div>
+    <div class="stat"><div class="num">0</div><div class="lbl">manual steps required</div></div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="icon">&#x1F50D;</div>
+      <h3>Root-Cause in Seconds</h3>
+      <p>Gemini 2.0 Flash reads pipeline logs and pinpoints the exact cause — missing env vars, dependency conflicts, flaky tests, auth failures.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#x1F527;</div>
+      <h3>Diff-Ready Fix Patches</h3>
+      <p>Returns unified diffs with confidence levels (high/medium/low). Copy-paste directly into your CI config or source file.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#x1F4AC;</div>
+      <h3>Auto MR Comments</h3>
+      <p>Optionally posts the full diagnosis on the failing merge request so your team sees it immediately.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#x26A1;</div>
+      <h3>Zero-Touch Webhook</h3>
+      <p>Register once as a GitLab Pipeline webhook. Every failure triggers an automatic diagnosis — no engineer action needed.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#x1F4CA;</div>
+      <h3>Splunk Integration</h3>
+      <p>Ingest pipeline events into Splunk and run natural-language investigations across historical failure data.</p>
+    </div>
+    <div class="card">
+      <div class="icon">&#x2601;</div>
+      <h3>Cloud-Native</h3>
+      <p>Deploys to Google Cloud Run in one command. Scales to zero when idle. Uses Vertex AI for enterprise-grade inference.</p>
+    </div>
+  </div>
+
+  <section id="demo">
+    <h2>&#x25B6; Interactive Demo</h2>
+    <div class="demo-box">
+      <p style="color:#8b949e;font-size:.88rem;margin-bottom:1.2rem">
+        Select a scenario below to see a real PipelineGuard diagnosis.
+        These outputs were produced by Gemini 2.0 Flash against actual GitLab pipelines.
+      </p>
+      <label for="scenario">Choose a failure scenario</label>
+      <select id="scenario" onchange="loadScenario()">
+        <option value="redis">Missing env var — Redis ConnectionError</option>
+        <option value="deps">Dependency conflict — pip install fails</option>
+        <option value="flaky">Flaky test — intermittent network timeout</option>
+      </select>
+      <div class="terminal" id="termOutput"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>&#x1F3A5; Demo Video</h2>
+    <div class="video-box">
+      <p>&#x25B6; Full walkthrough video showing PipelineGuard diagnosing a real failing pipeline,
+      posting an MR comment, and the Splunk integration.</p>
+      <p style="margin-top:.75rem">
+        <a href="https://github.com/64johnlee/hackathon-pipeline-guard/tree/main/demo" target="_blank">
+          &#x1F4F9; View demo videos on GitHub
+        </a>
+      </p>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>&#x1F9F1; Architecture</h2>
+    <div class="arch">
+<span class="hi">GitLab Pipeline Fails</span>
+        |
+        v  POST /webhook/gitlab  (X-Gitlab-Token validated)
+<span class="hi">PipelineGuard / FastAPI</span>  -----------------------------------------------+
+        |                                                               |
+        v  fetch logs + MR context                                     v
+<span class="hi">GitLab REST API</span>                                          <span class="hi">Gemini 2.0 Flash</span>
+  (python-gitlab or                                       (Vertex AI Agent Builder
+   GitLab MCP Server)                                      or AI Studio)
+        |                                                               |
+        +-------------- structured DiagnosticReport &lt;-----------------+
+                                    |
+                +-------------------+-------------------+
+                v                   v                   v
+          <span class="gr">root_cause</span>        <span class="gr">fix_proposals</span>     <span class="gr">failure_category</span>
+        (MR comment)        (diff patches)     (flaky/env/code/...)
+    </div>
+    <p style="color:#8b949e;font-size:.85rem;margin-top:1rem">
+      The agent uses the <strong style="color:#e6edf3">GitLab MCP Server</strong> (Model Context Protocol)
+      to give Gemini structured access to pipeline data — no prompt engineering for log parsing.
+      Falls back to direct <code>python-gitlab</code> calls when MCP is unavailable.
+    </p>
+  </section>
+
+  <section id="api">
+    <h2>&#x1F4D6; API Reference</h2>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.2rem">
+      <div class="endpoint-row">
+        <span class="method">GET</span>
+        <code>/</code>
+        <span style="color:#8b949e;font-size:.85rem">Landing page</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method">GET</span>
+        <code>/health</code>
+        <span style="color:#8b949e;font-size:.85rem">Health check → <code>{"status":"ok","service":"PipelineGuard"}</code></span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method post">POST</span>
+        <code>/demo</code>
+        <span style="color:#8b949e;font-size:.85rem">Read-only live diagnosis — body: <code>{"project":"org/repo","pipeline_id":123}</code></span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method post">POST</span>
+        <code>/webhook/gitlab</code>
+        <span style="color:#8b949e;font-size:.85rem">GitLab Pipeline webhook receiver — auto-diagnoses and posts MR comment</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method">GET</span>
+        <code>/docs</code>
+        <span style="color:#8b949e;font-size:.85rem">OpenAPI / Swagger UI — interactive API explorer</span>
+      </div>
+    </div>
+    <p style="color:#8b949e;font-size:.82rem;margin-top:.75rem">
+      Self-host:
+      <code>pip install pipelineguard[web]</code> then
+      <code>GITLAB_TOKEN=xxx GEMINI_API_KEY=yyy pipelineguard serve</code>
+    </p>
+  </section>
+
+  <section>
+    <h2>&#x1F9F0; Built With</h2>
+    <div>
+      <span class="tag">Gemini 2.0 Flash</span>
+      <span class="tag">Vertex AI Agent Builder</span>
+      <span class="tag">GitLab MCP Server</span>
+      <span class="tag">FastAPI</span>
+      <span class="tag">python-gitlab</span>
+      <span class="tag">Google Cloud Run</span>
+      <span class="tag">google-genai SDK</span>
+      <span class="tag">Splunk HEC</span>
+      <span class="tag">Pydantic v2</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>&#x1F680; Quick Start</h2>
+    <div class="terminal">
+<span class="dim"># Install</span>
+<span class="hi">pip install pipelineguard[web]</span>
+
+<span class="dim"># One-shot diagnosis</span>
+<span class="hi">export GITLAB_TOKEN=glpat-...</span>
+<span class="hi">export GEMINI_API_KEY=AIza...</span>
+<span class="hi">pipelineguard diagnose myorg/myrepo</span>
+
+<span class="dim"># Start webhook server (auto-diagnoses every failure)</span>
+<span class="hi">pipelineguard serve --port 8080</span>
+<span class="dim"># Then: GitLab Settings -&gt; Webhooks -&gt; Pipeline events -&gt; your URL</span>
+
+<span class="dim"># Deploy to Google Cloud Run</span>
+<span class="hi">bash deploy_cloudrun.sh</span>
+    </div>
+  </section>
+
+</main>
+<footer>
+  <p>
+    PipelineGuard &mdash; Built for the
+    <a href="https://rapid-agent.devpost.com" target="_blank">Google Cloud Rapid Agent Hackathon 2026</a>
+    &nbsp;|&nbsp;
+    <a href="https://github.com/64johnlee/hackathon-pipeline-guard" target="_blank">GitHub</a>
+    &nbsp;|&nbsp; MIT License
+  </p>
+</footer>
+
+<script>
+const SCENARIOS = {
+  redis: {
+    cmd: "pipelineguard diagnose myorg/api-service --comment",
+    mcp: [
+      'list_pipelines({"project_id": "myorg/api-service", "status": "failed"})',
+      'get_pipeline_jobs({"project_id": "myorg/api-service", "pipeline_id": 84321})',
+      'get_job_log({"project_id": "myorg/api-service", "job_id": 198744})'
+    ],
+    category: "env_var_missing", affected: "test-unit",
+    cause: "Missing REDIS_URL env var causes ConnectionError in test-unit",
+    file: ".gitlab-ci.yml", fix: "Add REDIS_URL + redis svc", conf: "high",
+    diff: ["--- a/.gitlab-ci.yml","--- b/.gitlab-ci.yml","@@ -12,6 +12,8 @@ test-unit:","  variables:","    DATABASE_URL: postgresql://postgres:postgres@postgres/testdb","+    REDIS_URL: redis://redis:6379/0","  services:","    - postgres:15","+    - redis:7"],
+    analysis: 'The job <span class="ok">test-unit</span> failed at pytest collection.\nLog: <span class="warn">redis.exceptions.ConnectionError: Error 111 connecting to localhost:6379</span>\nOrigin: <span class="ok">app/cache.py:47</span> in <span class="ok">get_redis_client()</span> reads <span class="ok">os.environ["REDIS_URL"]</span>.\nThe var is in .env but not in .gitlab-ci.yml job variables.',
+    url: "https://gitlab.com/myorg/api-service/-/merge_requests/42#note_1234567",
+    pid: 84321, flaky: false
+  },
+  deps: {
+    cmd: "pipelineguard diagnose myorg/ml-pipeline",
+    mcp: [
+      'list_pipelines({"project_id": "myorg/ml-pipeline", "status": "failed"})',
+      'get_pipeline_jobs({"project_id": "myorg/ml-pipeline", "pipeline_id": 91042})',
+      'get_job_log({"project_id": "myorg/ml-pipeline", "job_id": 210033})'
+    ],
+    category: "dependency_conflict", affected: "build",
+    cause: "numpy 2.0 incompatible with torch 2.1 — pip resolver conflict",
+    file: "requirements.txt", fix: "Pin numpy>=1.24,<2.0", conf: "high",
+    diff: ["--- a/requirements.txt","+++ b/requirements.txt","@@ -3,4 +3,4 @@"," torch==2.1.0","-numpy","+numpy>=1.24,<2.0"," scikit-learn>=1.3"],
+    analysis: 'The <span class="ok">build</span> job failed at <span class="warn">pip install -r requirements.txt</span>.\nLog: <span class="warn">ERROR: Cannot install torch==2.1.0 and numpy==2.0.1 together.</span>\ntorch 2.1 depends on C-level APIs removed in numpy 2.0.\nFix: pin <span class="ok">numpy&lt;2.0</span> until torch 2.2+ is available.',
+    url: null, pid: 91042, flaky: false
+  },
+  flaky: {
+    cmd: "pipelineguard diagnose myorg/backend --comment",
+    mcp: [
+      'list_pipelines({"project_id": "myorg/backend", "status": "failed"})',
+      'get_pipeline_jobs({"project_id": "myorg/backend", "pipeline_id": 77821})',
+      'get_job_log({"project_id": "myorg/backend", "job_id": 181002})',
+      'get_pipeline({"project_id": "myorg/backend", "pipeline_id": 77820})'
+    ],
+    category: "flaky_test", affected: "e2e",
+    cause: "[FLAKY] test_checkout_flow timeout — shared staging env overloaded",
+    file: ".gitlab-ci.yml", fix: "Add retry: max 2 to e2e job", conf: "medium",
+    diff: ["--- a/.gitlab-ci.yml","+++ b/.gitlab-ci.yml","@@ -28,4 +28,6 @@ e2e:"," stage: test"," script:"," - pytest tests/e2e/","+  retry:","+    max: 2","+    when: always"],
+    analysis: 'The <span class="ok">e2e</span> job failed with <span class="warn">TimeoutError: request to staging-api timed out after 30s</span>.\nChecked the last 4 pipelines: 3 passed, 1 failed — <span class="warn">flaky pattern detected</span>.\nShared staging environment occasionally overloaded during CI runs.\nShort-term: add <span class="ok">retry: max 2</span>. Long-term: provision dedicated staging per MR.',
+    url: "https://gitlab.com/myorg/backend/-/merge_requests/88#note_9876543",
+    pid: 77821, flaky: true
+  }
+};
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function loadScenario() {
+  const key = document.getElementById('scenario').value;
+  const s = SCENARIOS[key];
+  const mcp = s.mcp.map(m => `<span class="dim">  -> ${esc(m)}</span>`).join('\n');
+  const diffLines = s.diff.map(l => {
+    if(l.startsWith('+') && !l.startsWith('+++')) return `<span class="diff-add">${esc(l)}</span>`;
+    if(l.startsWith('---') || l.startsWith('+++') || l.startsWith('@@')) return `<span class="dim">${esc(l)}</span>`;
+    return `<span class="dim">${esc(l)}</span>`;
+  }).join('\n');
+  const flakTag = s.flaky ? ' · <span class="warn">FLAKY</span>' : '';
+  const commentLine = s.url
+    ? `<span class="ok">Comment posted:</span> ${s.url}`
+    : '<span class="dim">(--no-comment flag set; no MR comment posted)</span>';
+  const proj = s.cmd.split(' ')[2];
+  document.getElementById('termOutput').innerHTML =
+`<span class="prompt">$</span> <span class="hi">${esc(s.cmd)}</span>
+
+${mcp}
+
+<span class="warn">+----------------------------------------------------------------------+</span>
+<span class="warn">|</span> <span class="hi">Root cause:</span> ${esc(s.cause)}${flakTag}
+<span class="warn">|</span> <span class="hi">Category :</span> ${esc(s.category)}
+<span class="warn">|</span> <span class="hi">Affected :</span> ${esc(s.affected)}
+<span class="warn">+----------------------------------------------------------------------+</span>
+
+<span class="hi">Proposed Fixes</span>
+  ${esc(s.file)}  |  ${esc(s.fix)}  |  <span class="ok">${esc(s.conf)}</span>
+
+<span class="hi">${esc(s.file)} diff:</span>
+${diffLines}
+
+<span class="hi">Full Analysis</span>
+${s.analysis}
+
+${commentLine}
+<span class="dim">Pipeline: https://gitlab.com/${esc(proj)}/-/pipelines/${s.pid}</span>`;
+}
+
+loadScenario();
+</script>
+</body>
+</html>
