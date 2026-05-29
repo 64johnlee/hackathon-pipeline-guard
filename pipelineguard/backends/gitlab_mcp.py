@@ -45,7 +45,6 @@ class GitLabOfficialMCPBackend:
         gitlab_token: str,
         gitlab_url: str = "https://gitlab.com",
     ) -> None:
-        self._token = gitlab_token
         self._mcp_url = f"{gitlab_url.rstrip('/')}/api/v4/mcp"
         self._headers: dict[str, str] = {
             "Authorization": f"Bearer {gitlab_token}",
@@ -100,19 +99,36 @@ class GitLabOfficialMCPBackend:
             return []
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        """Execute an official GitLab MCP tool by its prefixed name."""
+        """Execute an official GitLab MCP tool.
+
+        The GitLab server may expect either the prefixed name (``gl_foo``) or
+        the original name (``foo``) in call_tool requests — behaviour depends on
+        the server version.  We try the prefixed name first; if the call fails
+        we retry once with the prefix stripped so the agent always gets a result.
+        """
         if not self.connected or self._session is None:
             return "(official GitLab MCP server not connected)"
-        try:
-            result = await self._session.call_tool(name, arguments)
+
+        async def _call(tool_name: str) -> str:
+            result = await self._session.call_tool(tool_name, arguments)  # type: ignore[union-attr]
             parts: list[str] = [
                 item.text if hasattr(item, "text") else str(item)
                 for item in result.content
             ]
             return "\n".join(parts)
-        except Exception as exc:
-            logger.warning("Tool call %r failed on official GitLab MCP: %s", name, exc)
-            return f"(error calling {name}: {exc})"
+
+        try:
+            return await _call(name)
+        except Exception as first_exc:
+            # Retry with prefix stripped in case the server expects the bare name.
+            if name.startswith(TOOL_PREFIX):
+                bare_name = name[len(TOOL_PREFIX):]
+                try:
+                    return await _call(bare_name)
+                except Exception:
+                    pass  # fall through to original error
+            logger.warning("Tool call %r failed on official GitLab MCP: %s", name, first_exc)
+            return f"(error calling {name}: {first_exc})"
 
     def owns_tool(self, name: str) -> bool:
         """True if this backend owns the given tool (``gl_`` prefix match)."""
