@@ -1,3 +1,14 @@
+---
+title: PipelineGuard
+emoji: 🔍
+colorFrom: blue
+colorTo: blue
+sdk: docker
+app_port: 8080
+pinned: false
+license: mit
+---
+
 # PipelineGuard
 
 > AI-powered GitLab CI pipeline diagnostics using Gemini 2.5 Flash + a purpose-built MCP server.
