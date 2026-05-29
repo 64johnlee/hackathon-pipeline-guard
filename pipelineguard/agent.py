@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .backends.direct import DirectBackend
+from .backends.gitlab_mcp import GitLabOfficialMCPBackend
 from .backends.mcp import MCPBackend
 from .models import Confidence, DiagnosisReport, FailureCategory, FixProposal
 from .prompts import SYSTEM_PROMPT, build_analysis_prompt
@@ -67,7 +68,7 @@ class PipelineGuardAgent:
         post_comment: bool = False,
         create_fix_mr: bool = False,
     ) -> DiagnosisReport:
-        mode = "MCP" if self._use_mcp else "direct"
+        mode = "GitLab MCP (official) + PipelineGuard MCP" if self._use_mcp else "direct"
         console.print(
             Panel(
                 f"[bold cyan]PipelineGuard[/] · project [green]{project}[/]"
@@ -90,18 +91,41 @@ class PipelineGuardAgent:
         pipeline_id: int | None,
         post_comment: bool,
     ) -> DiagnosisReport:
-        async with MCPBackend(self._gitlab_token, self._gitlab_url) as backend:
-            tools = await backend.list_tools_as_gemini()
-            prompt = build_analysis_prompt(project=project, pipeline_id=pipeline_id)
-            messages: list[types.Content] = [
-                types.Content(role="user", parts=[types.Part(text=prompt)])
-            ]
-            final_text = await self._run_tool_loop(backend, tools, messages)
+        async with MCPBackend(self._gitlab_token, self._gitlab_url) as pipeline_backend:
+            async with GitLabOfficialMCPBackend(self._gitlab_token, self._gitlab_url) as official_backend:
+                if official_backend.connected:
+                    console.print(
+                        "  [dim green]✓ Official GitLab MCP server connected[/]"
+                    )
+                else:
+                    console.print(
+                        "  [dim yellow]⚠ Official GitLab MCP server unavailable"
+                        " — using pipeline MCP only[/]"
+                    )
+
+                # Merge tools: pipeline-specific tools first so Gemini
+                # prefers them for diagnosis; official tools provide context.
+                pipeline_tools = await pipeline_backend.list_tools_as_gemini()
+                official_tools = await official_backend.list_tools_as_gemini()
+
+                all_declarations = []
+                for tool_obj in pipeline_tools + official_tools:
+                    all_declarations.extend(tool_obj.function_declarations or [])
+                merged_tools = [types.Tool(function_declarations=all_declarations)]
+
+                prompt = build_analysis_prompt(project=project, pipeline_id=pipeline_id)
+                messages: list[types.Content] = [
+                    types.Content(role="user", parts=[types.Part(text=prompt)])
+                ]
+                final_text = await self._run_tool_loop(
+                    pipeline_backend, official_backend, merged_tools, messages
+                )
         return _parse_report(final_text, project, pipeline_id)
 
     async def _run_tool_loop(
         self,
-        backend: MCPBackend,
+        pipeline_backend: MCPBackend,
+        official_backend: GitLabOfficialMCPBackend,
         tools: list[types.Tool],
         messages: list[types.Content],
     ) -> str:
@@ -145,7 +169,6 @@ class PipelineGuardAgent:
                     if p.text
                 ]
 
-                # Capture any text seen (even alongside tool calls)
                 if text_parts:
                     final_text = "\n".join(text_parts)
 
@@ -156,7 +179,13 @@ class PipelineGuardAgent:
                 for fc in tool_calls:
                     progress.update(task_id, description=f"→ {fc.name}(…)")
                     console.print(f"  [dim]→ {fc.name}({_fmt_args(dict(fc.args))})[/]")
-                    result_text = await backend.call_tool(fc.name, dict(fc.args))
+
+                    # Route to the correct backend by tool name prefix.
+                    if official_backend.owns_tool(fc.name):
+                        result_text = await official_backend.call_tool(fc.name, dict(fc.args))
+                    else:
+                        result_text = await pipeline_backend.call_tool(fc.name, dict(fc.args))
+
                     tool_responses.append(
                         types.Part(
                             function_response=types.FunctionResponse(

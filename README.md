@@ -21,34 +21,42 @@ Built for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.c
 
 ```
 User / CI Webhook
-      │
-      ▼
-┌─────────────────────────────────────────────────┐
-│  PipelineGuardAgent  (pipelineguard/agent.py)   │
-│                                                 │
-│  ┌──────────────────┐    ┌──────────────────┐   │
-│  │  Gemini 2.5 Flash│◄──►│  Tool Call Loop  │   │
-│  │  (google-genai)  │    │  (up to 15 iters)│   │
-│  └──────────────────┘    └────────┬─────────┘   │
-└───────────────────────────────────┼─────────────┘
-                                    │ MCP function calls (stdio)
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  pipelineguard.mcp_server     │
-                    │  (bundled, ships with pkg)    │
-                    │                               │
-                    │  list_pipelines               │
-                    │  get_pipeline_jobs            │
-                    │  get_job_log                  │
-                    │  find_merge_request_by_sha    │
-                    │  create_merge_request_note    │
-                    └───────────────────────────────┘
-                                    │
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│  PipelineGuardAgent  (pipelineguard/agent.py)                     │
+│                                                                   │
+│  ┌──────────────────┐    ┌─────────────────────────────────────┐  │
+│  │  Gemini 2.5 Flash│◄──►│  Tool Call Loop   (≤15 iterations)  │  │
+│  │  (Vertex AI /    │    │  Routes by tool name prefix:        │  │
+│  │   AI Studio)     │    │    gl_*  →  Official GitLab MCP     │  │
+│  └──────────────────┘    │    rest  →  PipelineGuard MCP       │  │
+│                           └────────────┬──────────┬────────────┘  │
+└────────────────────────────────────────┼──────────┼───────────────┘
+                                         │          │
+               ┌─────────────────────────┘          └────────────────────────┐
+               │ StreamableHTTP (HTTPS)                   stdio (subprocess)  │
+               ▼                                          ▼
+┌──────────────────────────────────┐   ┌──────────────────────────────────────┐
+│  Official GitLab MCP Server      │   │  pipelineguard.mcp_server (bundled)  │
+│  gitlab.com/api/v4/mcp           │   │                                      │
+│  Auth: Bearer <PAT>              │   │  list_pipelines                      │
+│  Tool prefix: gl_                │   │  get_pipeline_jobs                   │
+│                                  │   │  get_job_log                         │
+│  gl_list_projects                │   │  find_merge_request_by_sha           │
+│  gl_get_project                  │   │  create_merge_request_note           │
+│  gl_list_merge_requests          │   └──────────────────────────────────────┘
+│  gl_list_pipelines  …            │                     │
+└──────────────────────────────────┘                     │
+               │                                         │
+               └────────────────────┬────────────────────┘
                                     ▼
                             GitLab API (HTTPS)
 ```
 
-**Fallback mode** (`--direct`): skips the MCP server and uses `python-gitlab` directly in-process — single Gemini call instead of an agentic loop. Useful when MCP stdio subprocesses aren't allowed by the host (e.g. some sandboxed CI runners).
+**Dual MCP architecture**: Gemini receives tools from *both* MCP servers simultaneously. The **official GitLab MCP server** (partner-required for the hackathon track) provides general project, MR, and pipeline context. PipelineGuard's **bundled pipeline MCP server** adds deep diagnosis tooling not yet in the official server — job log retrieval, structured failure categorisation, and MR note posting. Tool calls are routed by name prefix: `gl_*` goes to the official server, everything else to the bundled one. If the official server is unreachable, diagnosis continues uninterrupted with the bundled server.
+
+**Fallback mode** (`--direct`): skips both MCP servers and uses `python-gitlab` directly in-process — single Gemini call instead of an agentic loop. Useful when MCP stdio subprocesses aren't allowed by the host (e.g. some sandboxed CI runners).
 
 ---
 
