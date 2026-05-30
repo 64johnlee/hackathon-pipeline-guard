@@ -397,8 +397,12 @@ def make_app(
             }
         except HTTPException:
             raise
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+        except BaseException as exc:
+            # Unwrap anyio ExceptionGroup so the real cause is visible
+            msg = str(exc)
+            if hasattr(exc, "exceptions") and exc.exceptions:  # ExceptionGroup
+                msg = "; ".join(str(e) for e in exc.exceptions)
+            raise HTTPException(status_code=500, detail=msg)
 
     @app.post("/webhook/gitlab")
     async def gitlab_webhook(payload: dict[str, Any]) -> dict[str, str]:

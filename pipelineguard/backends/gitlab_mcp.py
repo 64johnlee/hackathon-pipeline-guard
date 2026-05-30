@@ -63,7 +63,18 @@ class GitLabOfficialMCPBackend:
             await self._session.initialize()
             self.connected = True
             logger.info("Official GitLab MCP server connected (%s)", self._mcp_url)
-        except Exception as exc:
+        except BaseException as exc:
+            # anyio raises CancelledError (BaseException) and BaseExceptionGroup
+            # (also BaseException) when task group sub-tasks fail — neither is
+            # caught by plain `except Exception`. Re-raise true process signals;
+            # for everything else, degrade gracefully.
+            # Do NOT call __aexit__ on self._cm: streamablehttp_client's async
+            # generator teardown triggers "cancel scope in wrong task" errors.
+            # Let asyncio GC the generator — safe in a long-lived FastAPI loop.
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            self._session = None
+            self._cm = None
             logger.warning(
                 "Official GitLab MCP server unavailable — %s. "
                 "Pipeline diagnosis continues with the bundled MCP server.",
@@ -75,12 +86,12 @@ class GitLabOfficialMCPBackend:
         if self._session:
             try:
                 await self._session.__aexit__(*exc_info)
-            except Exception:
+            except BaseException:
                 pass
         if self._cm:
             try:
                 await self._cm.__aexit__(*exc_info)
-            except Exception:
+            except BaseException:
                 pass
 
     async def list_tools_as_gemini(self) -> list[types.Tool]:
