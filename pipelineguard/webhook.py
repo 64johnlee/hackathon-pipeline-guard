@@ -351,7 +351,10 @@ def make_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "service": "PipelineGuard"}
+        import os
+        backend = "vertex" if use_vertex else ("aistudio" if gemini_api_key else "none")
+        return {"status": "ok", "service": "PipelineGuard", "backend": backend,
+                "gemini_key_set": "yes" if os.environ.get("GEMINI_API_KEY") else "no"}
 
     @app.post("/demo")
     async def demo_diagnose(body: dict[str, Any]) -> dict[str, Any]:
