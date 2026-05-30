@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -e ".[web,vertex]"
 ENV PORT=8080
 
 # Auth: set GEMINI_API_KEY (AI Studio) — required
-# Always uses --direct (no Node.js / MCP server in container)
+# MCP mode: bundled pipeline MCP (stdio subprocess) +
+#           official GitLab MCP (gitlab.com/api/v4/mcp, HTTP)
 CMD exec pipelineguard serve \
     --host 0.0.0.0 \
-    --port "${PORT}" \
-    --direct
+    --port "${PORT}"
