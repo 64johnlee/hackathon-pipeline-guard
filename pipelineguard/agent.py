@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 import anyio
@@ -274,12 +273,75 @@ def _build_direct_prompt(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _sanitize_json(s: str) -> str:
+    """Escape literal control characters inside JSON string values.
+
+    Gemini sometimes writes literal newlines/tabs inside string values
+    (e.g. in diff fields), producing invalid JSON.  Walk the token stream
+    and replace bare control chars with their JSON escape sequences.
+    """
+    out: list[str] = []
+    in_str = False
+    escaped = False
+    _escapes = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    for ch in s:
+        if escaped:
+            out.append(ch)
+            escaped = False
+        elif ch == "\\":
+            out.append(ch)
+            escaped = True
+        elif ch == '"':
+            out.append(ch)
+            in_str = not in_str
+        elif in_str and ch in _escapes:
+            out.append(_escapes[ch])
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _extract_json_block(text: str) -> str | None:
+    """Extract the first JSON object from a ```json ... ``` block.
+
+    Uses brace-counting rather than regex so embedded triple-backticks
+    inside string values (e.g. diffs) don't terminate the match early.
+    """
+    start = text.find("```json")
+    if start == -1:
+        return None
+    brace_start = text.find("{", start)
+    if brace_start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escaped = False
+    for i, ch in enumerate(text[brace_start:], brace_start):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and in_str:
+            escaped = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[brace_start : i + 1]
+    return None
+
+
 def _parse_report(text: str, project: str, pipeline_id: int | None) -> DiagnosisReport:
     """Extract a DiagnosisReport from the agent's final text response."""
-    json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if json_match:
+    raw_json = _extract_json_block(text)
+    if raw_json is not None:
         try:
-            data = json.loads(json_match.group(1))
+            data = json.loads(_sanitize_json(raw_json))
             proposals = [
                 FixProposal(
                     file_path=p.get("file_path", ""),
