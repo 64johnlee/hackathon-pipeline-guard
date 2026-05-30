@@ -68,7 +68,7 @@ _LANDING_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>&#x1F6E1; PipelineGuard <span class="badge">Gemini 2.0</span></h1>
+  <h1>&#x1F6E1; PipelineGuard <span class="badge">Gemini 2.5</span></h1>
   <p>AI-powered GitLab CI pipeline failure diagnostics &amp; auto-fix agent</p>
 </header>
 <main>
@@ -77,7 +77,7 @@ _LANDING_HTML = """<!DOCTYPE html>
     <div class="card">
       <div class="icon">&#x1F50D;</div>
       <h3>Instant Root-Cause Analysis</h3>
-      <p>Gemini 2.0 Flash reads your pipeline logs and pinpoints the exact failure in seconds.</p>
+      <p>Gemini 2.5 Flash reads your pipeline logs and pinpoints the exact failure in seconds.</p>
     </div>
     <div class="card">
       <div class="icon">&#x1F527;</div>
@@ -102,7 +102,7 @@ _LANDING_HTML = """<!DOCTYPE html>
       <p style="color:#8b949e;font-size:.9rem;margin-bottom:1rem">
         Diagnose any failed GitLab pipeline. Enter a public project path and
         (optionally) a specific pipeline ID. The agent fetches logs and returns
-        a root-cause analysis using Gemini 2.0 Flash. No comment will be posted.
+        a root-cause analysis using Gemini 2.5 Flash. No comment will be posted.
       </p>
       <label for="proj">GitLab project (namespace/repo)</label>
       <input id="proj" placeholder="e.g. gitlab-org/gitlab-runner" />
@@ -122,7 +122,7 @@ _LANDING_HTML = """<!DOCTYPE html>
 <span class="hi">PipelineGuard / FastAPI</span>  ─────────────────────────────┐
        │                                                     │
        ▼ fetch logs + MR context                             ▼
-<span class="hi">GitLab REST API</span>                                  <span class="hi">Gemini 2.0 Flash</span>
+<span class="hi">GitLab REST API</span>                                  <span class="hi">Gemini 2.5 Flash</span>
   (python-gitlab)                               (Vertex AI / AI Studio)
        │                                                     │
        └─────── structured DiagnosticReport ◄────────────────┘
@@ -167,7 +167,7 @@ _LANDING_HTML = """<!DOCTYPE html>
   <section>
     <h2>Built With</h2>
     <div>
-      <span class="tag">Gemini 2.0 Flash</span>
+      <span class="tag">Gemini 2.5 Flash</span>
       <span class="tag">Vertex AI</span>
       <span class="tag">GitLab MCP Server</span>
       <span class="tag">FastAPI</span>

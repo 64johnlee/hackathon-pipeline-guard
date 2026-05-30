@@ -77,11 +77,12 @@
 <body>
 <header>
   <h1>&#x1F6E1; PipelineGuard
-    <span class="badge">Gemini 2.0 Flash</span>
-    <span class="badge green">Web</span>
+    <span class="badge">Gemini 2.5 Flash</span>
+    <a class="badge green" style="text-decoration:none" href="https://johnlee007-pipelineguard.hf.space" target="_blank">&#x25CF; Live</a>
   </h1>
   <p>AI agent that auto-diagnoses GitLab CI pipeline failures and proposes diff-ready fixes</p>
   <nav>
+    <a href="https://johnlee007-pipelineguard.hf.space" target="_blank">&#x25B6; Live Demo</a>
     <a href="https://github.com/64johnlee/hackathon-pipeline-guard" target="_blank">&#x2197; GitHub</a>
     <a href="https://devpost.com/software/pipelineguard" target="_blank">&#x1F3C6; Devpost</a>
     <a href="#demo">&#x25B6; Demo</a>
@@ -108,7 +109,7 @@
     <div class="card">
       <div class="icon">&#x1F50D;</div>
       <h3>Root-Cause in Seconds</h3>
-      <p>Gemini 2.0 Flash reads pipeline logs and pinpoints the exact cause — missing env vars, dependency conflicts, flaky tests, auth failures.</p>
+      <p>Gemini 2.5 Flash reads pipeline logs and pinpoints the exact cause — missing env vars, dependency conflicts, flaky tests, auth failures.</p>
     </div>
     <div class="card">
       <div class="icon">&#x1F527;</div>
@@ -142,7 +143,7 @@
     <div class="demo-box">
       <p style="color:#8b949e;font-size:.88rem;margin-bottom:1.2rem">
         Select a scenario below to see a real PipelineGuard diagnosis.
-        These outputs were produced by Gemini 2.0 Flash against actual GitLab pipelines.
+        These outputs were produced by Gemini 2.5 Flash against actual GitLab pipelines.
       </p>
       <label for="scenario">Choose a failure scenario</label>
       <select id="scenario" onchange="loadScenario()">
@@ -176,7 +177,7 @@
 <span class="hi">PipelineGuard / FastAPI</span>  -----------------------------------------------+
         |                                                               |
         v  fetch logs + MR context                                     v
-<span class="hi">GitLab REST API</span>                                          <span class="hi">Gemini 2.0 Flash</span>
+<span class="hi">GitLab REST API</span>                                          <span class="hi">Gemini 2.5 Flash</span>
   (python-gitlab or                                       (Vertex AI Agent Builder
    GitLab MCP Server)                                      or AI Studio)
         |                                                               |
@@ -233,7 +234,7 @@
   <section>
     <h2>&#x1F9F0; Built With</h2>
     <div>
-      <span class="tag">Gemini 2.0 Flash</span>
+      <span class="tag">Gemini 2.5 Flash</span>
       <span class="tag">Vertex AI Agent Builder</span>
       <span class="tag">GitLab MCP Server</span>
       <span class="tag">FastAPI</span>
