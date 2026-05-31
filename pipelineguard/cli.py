@@ -356,7 +356,7 @@ def deploy(
             "google-cloud-aiplatform[reasoningengine]>=1.60.0",
         ],
         display_name=display_name,
-        description="AI-powered GitLab CI pipeline diagnostics using Gemini 2.0 Flash",
+        description="AI-powered GitLab CI pipeline diagnostics using Gemini 2.5 Flash",
     )
 
     resource_name = remote_app.resource_name

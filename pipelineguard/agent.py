@@ -27,7 +27,7 @@ _MAX_TOOL_ITERATIONS = 15
 
 class PipelineGuardAgent:
     """
-    Diagnoses GitLab CI pipeline failures using Gemini 2.0 Flash.
+    Diagnoses GitLab CI pipeline failures using Gemini 2.5 Flash.
 
     Primary mode: Gemini agentic loop with GitLab MCP server tools.
     Fallback mode: single-shot Gemini call with pre-fetched log data.

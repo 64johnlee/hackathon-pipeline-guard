@@ -15,7 +15,7 @@
 │              pipelineguard/agent.py  |  splunk_agent.py         │
 │                                                                 │
 │   ┌──────────────────┐      ┌──────────────────────────────┐    │
-│   │  Gemini 2.0 Flash│◄────►│    Agentic Tool-Call Loop    │    │
+│   │  Gemini 2.5 Flash│◄────►│    Agentic Tool-Call Loop    │    │
 │   │  (google-genai)  │      │    (up to 15 iterations)     │    │
 │   └──────────────────┘      └──────────────┬───────────────┘    │
 └────────────────────────────────────────────┼────────────────────┘
@@ -45,7 +45,7 @@
 
 ```
 1. User runs: pipelineguard diagnose myorg/myrepo
-2. Agent sends initial prompt to Gemini 2.0 Flash
+2. Agent sends initial prompt to Gemini 2.5 Flash
 3. Gemini calls: list_pipelines → finds latest failed pipeline
 4. Gemini calls: get_pipeline_jobs → lists failed jobs
 5. Gemini calls: get_job_log (per failed job) → fetches raw logs
@@ -58,7 +58,7 @@
 
 ```
 1. User runs: pipelineguard splunk investigate "query"
-2. Agent sends investigation prompt to Gemini 2.0 Flash
+2. Agent sends investigation prompt to Gemini 2.5 Flash
 3. Gemini calls: get_indexes → discovers available data sources
 4. Gemini calls: generate_spl → converts question to SPL query
 5. Gemini calls: run_splunk_query → executes SPL, gets events
@@ -70,7 +70,7 @@
 
 | Component | Technology | Role |
 |---|---|---|
-| LLM | Gemini 2.0 Flash (`gemini-2.0-flash`) | Reasoning, tool orchestration, report generation |
+| LLM | Gemini 2.5 Flash (`gemini-2.5-flash`) | Reasoning, tool orchestration, report generation |
 | Protocol | Model Context Protocol (MCP) open standard | AI-to-service communication |
 | GitLab tools | `@gitlab-org/mcp-gitlab` (official) | Pipeline/job/log access |
 | Splunk tools | Splunk MCP Server App v1.0+ | SPL execution, index discovery, AI-assisted queries |

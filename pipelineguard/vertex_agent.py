@@ -13,7 +13,7 @@ Deploy to Google Cloud Agent Builder:
         PipelineGuardVertexApp(gitlab_token="glpat-...", gitlab_url="https://gitlab.com"),
         requirements=["pipelineguard[web]>=0.1.0", "google-cloud-aiplatform[reasoningengine]"],
         display_name="PipelineGuard",
-        description="AI-powered GitLab CI pipeline diagnostics using Gemini 2.0 Flash",
+        description="AI-powered GitLab CI pipeline diagnostics using Gemini 2.5 Flash",
     )
     print(remote_app.resource_name)  # projects/.../reasoningEngines/...
 
