@@ -47,3 +47,41 @@ Auto-open MRs with the proposed fix (behind a human-approval gate), learn per-pr
 ## Links
 - **Live app:** https://johnlee007-pipelineguard.hf.space
 - **GitHub:** https://github.com/64johnlee/hackathon-pipeline-guard
+
+## Demo video
+
+> The video demonstrates an illustrative failure scenario (a missing `REDIS_URL`) to show the full loop clearly. The real-world end-to-end verification against `gitlab-org/cli` (~46s, 2 tool calls) is documented in the README — don't conflate the two in the writeup.
+
+**Short caption (video gallery tile):**
+PipelineGuard: a GitLab pipeline fails, and Gemini 2.5 Flash diagnoses the exact root cause through a live MCP tool-call loop, then posts a diff-ready fix to the merge request — in ~90 seconds, zero clicks.
+
+**Full description:**
+PipelineGuard watches your GitLab CI. When a pipeline fails, a Gemini 2.5 Flash agent reads the logs through MCP tools, pinpoints the root cause, proposes a unified-diff fix, and comments it on the merge request. This ~90-second walkthrough shows the full agentic loop running against a failed pipeline.
+
+What you'll see:
+- One command kicks it off — no dashboards, no manual log-scrolling
+- A **dual-MCP architecture** connecting: the official GitLab MCP server (`gitlab.com/api/v4/mcp`) and PipelineGuard's bundled stdio MCP server
+- Gemini autonomously working a tool-call loop (≤15 iterations) — discover project → find the failed pipeline → enumerate jobs → pull the failing job log
+- A precise diagnosis: a missing `REDIS_URL` env var causing a `ConnectionError`
+- A proposed fix as a unified diff on `.gitlab-ci.yml` (confidence: high), posted as a comment on the merge request
+- The architecture recap and the live deployed app
+
+Try it live: https://johnlee007-pipelineguard.hf.space
+Built for the Google Cloud Rapid Agent Hackathon — GitLab track.
+Code (MIT): https://github.com/64johnlee/hackathon-pipeline-guard
+
+**Chapters** *(approximate — verify against the final cut; total ≈ 1:27):*
+- `0:00` Title — PipelineGuard
+- `0:05` The problem: a red pipeline, and the log-scrolling ritual
+- `0:11` One command kicks off the agent
+- `0:14` Dual MCP connected (official GitLab MCP + bundled PipelineGuard MCP)
+- `0:18` Iteration 1 — discover the project
+- `0:23` Iteration 2 — find the failed pipeline
+- `0:28` Iteration 3 — enumerate the jobs
+- `0:33` Iteration 4 — pull the failing job log
+- `0:39` Diagnosis: missing `REDIS_URL` → `ConnectionError`
+- `0:49` Proposed fix diff + MR comment posted
+- `1:01` Architecture: dual MCP, Gemini 2.5 Flash, ≤15 iterations
+- `1:16` Try it live — deployed HF Space
+
+**Tags:** `gemini` · `mcp` · `gitlab-ci` · `ai-agent` · `devops` · `ci-cd` · `root-cause-analysis` · `google-cloud`
