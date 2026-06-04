@@ -45,10 +45,14 @@ Auto-open MRs with the proposed fix (behind a human-approval gate), learn per-pr
 `Gemini 2.5 Flash` · `Vertex AI` · `GitLab MCP Server` · `Model Context Protocol` · `FastAPI` · `python-gitlab` · `Pydantic v2` · `google-genai SDK` · `Google Cloud Run` · `Splunk HEC` · `Docker`
 
 ## Links
-- **Live app:** https://johnlee007-pipelineguard.hf.space
+- **Live app (HF Space):** https://johnlee007-pipelineguard.hf.space
+<!-- TODO before submit (Google Cloud track): run `bash deploy_cloudrun.sh`, then add the Cloud Run URL here as the PRIMARY live link — the judges expect the app on Google Cloud. Keep the HF Space as a mirror. -->
+- **Demo video:** <!-- TODO before submit: upload demo/pipelineguard_demo.mp4 to YouTube (unlisted) or Devpost and paste the URL here. Devpost requires a video link. -->
 - **GitHub:** https://github.com/64johnlee/hackathon-pipeline-guard
 
 ## Demo video
+
+**Video URL:** <!-- TODO: paste the hosted YouTube/Vimeo/Devpost link for demo/pipelineguard_demo.mp4 here before submitting -->
 
 > The video demonstrates an illustrative failure scenario (a missing `REDIS_URL`) to show the full loop clearly. The real-world end-to-end verification against `gitlab-org/cli` (~46s, 2 tool calls) is documented in the README — don't conflate the two in the writeup.
 

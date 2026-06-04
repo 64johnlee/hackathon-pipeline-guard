@@ -62,6 +62,8 @@ SplunkGuard has no public live URL (it queries a local/private Splunk instance),
 
 ## Demo video
 
+**Video URL:** <!-- TODO before submit: upload demo/splunkguard_demo.mp4 (720p, 2:14) to YouTube/Vimeo or Devpost and paste the link here. SplunkGuard has NO live URL, so this video IS the demo — it is mandatory. -->
+
 **Short caption (video gallery tile):**
 SplunkGuard: ask Splunk "what failed and why?" in plain English — Gemini 2.5 Flash writes the SPL and returns a structured root cause with paste-ready queries. Real Splunk, real GitLab data, end-to-end.
 
