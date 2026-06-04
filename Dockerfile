@@ -12,9 +12,12 @@ RUN pip install --no-cache-dir -e ".[web,vertex]"
 # Cloud Run sets PORT; fall back to 8080
 ENV PORT=8080
 
-# Auth: set GEMINI_API_KEY (AI Studio) — required
+# Auth: set GEMINI_API_KEY (AI Studio), OR set VERTEX_FLAG="--vertex --gcp-project <id>"
+# for Vertex AI (deploy_cloudrun.sh sets VERTEX_FLAG automatically when no API key
+# is provided). VERTEX_FLAG is empty in AI Studio mode, so this expands to nothing.
 # MCP mode: bundled pipeline MCP (stdio subprocess) +
 #           official GitLab MCP (gitlab.com/api/v4/mcp, HTTP)
 CMD exec pipelineguard serve \
     --host 0.0.0.0 \
-    --port "${PORT}"
+    --port "${PORT}" \
+    ${VERTEX_FLAG}
