@@ -30,6 +30,22 @@ echo "==> Service:  ${SERVICE}"
 echo "==> Image:    ${IMAGE}"
 echo ""
 
+# 0. Enable required Google Cloud APIs (idempotent)
+echo "==> Enabling required Google Cloud APIs..."
+gcloud services enable \
+    run.googleapis.com cloudbuild.googleapis.com \
+    artifactregistry.googleapis.com secretmanager.googleapis.com \
+    aiplatform.googleapis.com \
+    --project "${PROJECT}"
+
+# Note: the Cloud Run runtime service account needs roles/secretmanager.secretAccessor
+# to read the secrets set below. If deploy succeeds but the service returns 500s,
+# grant it once:
+#   PNUM=$(gcloud projects describe "${PROJECT}" --format='value(projectNumber)')
+#   gcloud projects add-iam-policy-binding "${PROJECT}" \
+#     --member "serviceAccount:${PNUM}-compute@developer.gserviceaccount.com" \
+#     --role roles/secretmanager.secretAccessor
+
 # 1. Create Artifact Registry repo (idempotent)
 echo "==> Ensuring Artifact Registry repository exists..."
 gcloud artifacts repositories create "${REPO}" \
