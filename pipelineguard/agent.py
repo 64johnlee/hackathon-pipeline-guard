@@ -374,13 +374,47 @@ def _parse_report(text: str, project: str, pipeline_id: int | None) -> Diagnosis
     )
 
 
+def _md_inline(text: str) -> str:
+    """Neutralize markdown-active characters in untrusted (model-derived) text.
+
+    The diagnosis is posted as a comment under the trusted PipelineGuard bot, so
+    a crafted CI log must not be able to steer Gemini into emitting links, raw
+    HTML, or code-span breakouts that then render live in the comment. Escaping
+    these characters keeps the text literal.
+    """
+    out: list[str] = []
+    for ch in str(text):
+        if ch in "\\`<>[]":
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _fenced_diff(diff: str) -> str:
+    """Fence a diff with more backticks than its longest internal run, so
+    untrusted diff content cannot close the fence early (CommonMark rule)."""
+    longest = run = 0
+    for ch in diff:
+        if ch == "`":
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}diff\n{diff}\n{fence}"
+
+
 def _format_comment(report: DiagnosisReport) -> str:
+    # failure_category / confidence are validated enums (trusted); root_cause,
+    # affected_jobs, file_path, description and diff are model-derived (untrusted).
+    affected = ", ".join(f"`{_md_inline(j)}`" for j in report.affected_jobs) or "(see below)"
     lines = [
         "## PipelineGuard Diagnosis",
         "",
-        f"**Root cause:** {report.root_cause}",
+        f"**Root cause:** {_md_inline(report.root_cause)}",
         f"**Category:** `{report.failure_category.value}`",
-        f"**Affected jobs:** {', '.join(f'`{j}`' for j in report.affected_jobs) or '(see below)'}",
+        f"**Affected jobs:** {affected}",
     ]
     if report.is_flaky:
         lines.append("\n> This failure appears **flaky** — consider retrying before applying a fix.")
@@ -388,11 +422,11 @@ def _format_comment(report: DiagnosisReport) -> str:
         lines.append("\n### Proposed fixes")
         for i, fix in enumerate(report.fix_proposals, 1):
             lines += [
-                f"\n**{i}. `{fix.file_path}`** ({fix.confidence.value} confidence)",
-                fix.description,
+                f"\n**{i}. `{_md_inline(fix.file_path)}`** ({fix.confidence.value} confidence)",
+                _md_inline(fix.description),
             ]
             if fix.diff:
-                lines += ["\n```diff", fix.diff, "```"]
+                lines.append("\n" + _fenced_diff(fix.diff))
     lines += [
         "",
         "---",
