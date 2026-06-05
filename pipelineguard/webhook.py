@@ -234,7 +234,7 @@ async def handle_pipeline_event(
     if kind != "pipeline":
         return {"status": "ignored", "reason": f"event kind={kind!r}"}
 
-    attrs = payload.get("object_attributes", {})
+    attrs = (payload.get("object_attributes") or {})
     status = attrs.get("status", "")
     if status != "failed":
         return {"status": "ignored", "reason": f"pipeline status={status!r}"}
@@ -243,7 +243,7 @@ async def handle_pipeline_event(
     if not isinstance(pipeline_id, int):
         return {"status": "error", "reason": f"invalid object_attributes.id: {pipeline_id!r}"}
 
-    project: str = payload.get("project", {}).get("path_with_namespace", "")
+    project: str = (payload.get("project") or {}).get("path_with_namespace", "")
     if not project:
         return {"status": "error", "reason": "missing project.path_with_namespace"}
 
@@ -270,9 +270,9 @@ async def handle_pipeline_event(
             result["comment_url"] = mr_comment_url
         console.print(f"[green]Done:[/] {result['root_cause']}")
         return result
-    except Exception as exc:
+    except Exception:
         logger.exception("Diagnosis failed for pipeline #%s", pipeline_id)
-        return {"status": "error", "reason": str(exc)}
+        return {"status": "error", "reason": "diagnosis failed"}
 
 
 def make_app(
@@ -327,6 +327,27 @@ def make_app(
         version="0.1.0",
     )
 
+    # Reject oversized request bodies before they are parsed (memory-exhaustion
+    # guard). Content-Length covers the normal case; chunked uploads without a
+    # declared length fall through, which is acceptable for this service.
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            if request.method == "POST":
+                content_length = request.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        too_large = int(content_length) > MAX_WEBHOOK_BODY_BYTES
+                    except ValueError:
+                        return JSONResponse({"detail": "invalid Content-Length"}, status_code=400)
+                    if too_large:
+                        return JSONResponse({"detail": "request body too large"}, status_code=413)
+            return await call_next(request)
+
+    app.add_middleware(BodySizeLimitMiddleware)
+
     # Add middleware to validate webhook token if secret is configured
     if webhook_secret:
         from starlette.middleware.base import BaseHTTPMiddleware
@@ -351,10 +372,8 @@ def make_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        import os
         backend = "vertex" if use_vertex else ("aistudio" if gemini_api_key else "none")
-        return {"status": "ok", "service": "PipelineGuard", "backend": backend,
-                "gemini_key_set": "yes" if os.environ.get("GEMINI_API_KEY") else "no"}
+        return {"status": "ok", "service": "PipelineGuard", "backend": backend}
 
     @app.post("/demo")
     async def demo_diagnose(body: dict[str, Any]) -> dict[str, Any]:
@@ -398,11 +417,13 @@ def make_app(
         except HTTPException:
             raise
         except BaseException as exc:
-            # Unwrap anyio ExceptionGroup so the real cause is visible
-            msg = str(exc)
+            # Unwrap anyio ExceptionGroup for a useful SERVER-SIDE log; return a
+            # generic message so internal details aren't leaked to the caller.
+            detail = str(exc)
             if hasattr(exc, "exceptions") and exc.exceptions:  # ExceptionGroup
-                msg = "; ".join(str(e) for e in exc.exceptions)
-            raise HTTPException(status_code=500, detail=msg)
+                detail = "; ".join(str(e) for e in exc.exceptions)
+            logger.exception("Demo diagnosis failed: %s", detail)
+            raise HTTPException(status_code=500, detail="diagnosis failed")
 
     @app.post("/webhook/gitlab")
     async def gitlab_webhook(payload: dict[str, Any]) -> dict[str, str]:
