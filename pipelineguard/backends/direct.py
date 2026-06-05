@@ -78,7 +78,7 @@ class DirectBackend:
         """Post a note on the MR associated with pipeline_sha, or return '' if none."""
         project = self._gl.projects.get(project_path)
         mrs = project.mergerequests.list(
-            state="opened", per_page=20, order_by="updated_at"
+            state="opened", per_page=50, order_by="updated_at"
         )
         for mr in mrs:
             if getattr(mr, "sha", None) == pipeline_sha:
