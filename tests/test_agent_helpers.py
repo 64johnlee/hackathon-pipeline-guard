@@ -105,3 +105,10 @@ class TestFormatComment:
     def test_flaky_note_present(self) -> None:
         r = self._minimal_report(is_flaky=True)
         assert "flaky" in _format_comment(r)
+
+    def test_affected_jobs_escaped(self) -> None:
+        # A job name containing backticks must not produce a runaway code-span
+        r = self._minimal_report(affected_jobs=["deploy`rm -rf /`"])
+        comment = _format_comment(r)
+        assert "deploy`rm -rf /`" not in comment
+        assert "deploy\\`rm" in comment
