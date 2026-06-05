@@ -146,7 +146,7 @@ class PipelineGuardAgent:
             for iteration in range(1, _MAX_TOOL_ITERATIONS + 1):
                 progress.update(task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…")
 
-                response = self._genai.models.generate_content(
+                response = await self._genai.aio.models.generate_content(
                     model=_GEMINI_MODEL,
                     contents=messages,
                     config=types.GenerateContentConfig(
@@ -165,12 +165,12 @@ class PipelineGuardAgent:
 
                 tool_calls = [
                     p.function_call
-                    for p in candidate.content.parts
+                    for p in (candidate.content.parts or [])
                     if p.function_call
                 ]
                 text_parts = [
                     p.text
-                    for p in candidate.content.parts
+                    for p in (candidate.content.parts or [])
                     if p.text
                 ]
 
@@ -224,7 +224,7 @@ class PipelineGuardAgent:
         prompt = _build_direct_prompt(data)
         console.print("[dim]Sending to Gemini for analysis…[/]")
 
-        response = self._genai.models.generate_content(
+        response = await self._genai.aio.models.generate_content(
             model=_GEMINI_MODEL,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
