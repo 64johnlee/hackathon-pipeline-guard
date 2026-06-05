@@ -39,12 +39,8 @@ gcloud services enable \
     --project "${PROJECT}"
 
 # Note: the Cloud Run runtime service account needs roles/secretmanager.secretAccessor
-# to read the secrets set below. If deploy succeeds but the service returns 500s,
-# grant it once:
-#   PNUM=$(gcloud projects describe "${PROJECT}" --format='value(projectNumber)')
-#   gcloud projects add-iam-policy-binding "${PROJECT}" \
-#     --member "serviceAccount:${PNUM}-compute@developer.gserviceaccount.com" \
-#     --role roles/secretmanager.secretAccessor
+# to read the secrets created below. This is now granted automatically in step 3b
+# (only when secrets are actually set), which prevents first-request 500s.
 
 # 1. Create Artifact Registry repo (idempotent)
 echo "==> Ensuring Artifact Registry repository exists..."
@@ -98,6 +94,18 @@ if [[ -n "${WEBHOOK_SECRET:-}" ]]; then
     else
         SET_SECRETS="WEBHOOK_SECRET=WEBHOOK_SECRET:latest"
     fi
+fi
+
+# 3b. Grant the Cloud Run runtime service account read access to the secrets above
+# (default compute SA). Without this, deploy succeeds but requests 500 on secret reads.
+if [[ -n "${SET_SECRETS}" ]]; then
+    echo "==> Granting secretmanager.secretAccessor to the runtime service account..."
+    PNUM=$(gcloud projects describe "${PROJECT}" --format='value(projectNumber)')
+    gcloud projects add-iam-policy-binding "${PROJECT}" \
+        --member "serviceAccount:${PNUM}-compute@developer.gserviceaccount.com" \
+        --role roles/secretmanager.secretAccessor \
+        --condition=None --quiet >/dev/null \
+      || echo "WARN: could not grant secretAccessor automatically — if requests 500, grant it manually (see header note)."
 fi
 
 # Use Vertex AI if no GEMINI_API_KEY provided
