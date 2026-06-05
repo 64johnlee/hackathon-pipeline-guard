@@ -374,6 +374,9 @@ def _parse_report(text: str, project: str, pipeline_id: int | None) -> Diagnosis
     )
 
 
+_MD_ESCAPE = str.maketrans({ch: "\\" + ch for ch in "\\`<>[]"})
+
+
 def _md_inline(text: str) -> str:
     """Neutralize markdown-active characters in untrusted (model-derived) text.
 
@@ -382,13 +385,7 @@ def _md_inline(text: str) -> str:
     HTML, or code-span breakouts that then render live in the comment. Escaping
     these characters keeps the text literal.
     """
-    out: list[str] = []
-    for ch in str(text):
-        if ch in "\\`<>[]":
-            out.append("\\" + ch)
-        else:
-            out.append(ch)
-    return "".join(out)
+    return str(text).translate(_MD_ESCAPE)
 
 
 def _fenced_diff(diff: str) -> str:
