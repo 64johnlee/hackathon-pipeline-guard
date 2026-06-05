@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .backends.splunk_direct import SplunkDirectBackend
 from .backends.splunk_mcp import SplunkMCPBackend
+from .agent import _extract_json_block, _sanitize_json
 from .splunk_prompts import SPLUNK_SYSTEM_PROMPT, build_splunk_prompt
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ class SplunkGuardAgent:
             for iteration in range(1, _MAX_TOOL_ITERATIONS + 1):
                 progress.update(task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…")
 
-                response = self._genai.models.generate_content(
+                response = await self._genai.aio.models.generate_content(
                     model=_GEMINI_MODEL,
                     contents=messages,
                     config=types.GenerateContentConfig(
@@ -149,12 +149,12 @@ class SplunkGuardAgent:
 
                 tool_calls = [
                     p.function_call
-                    for p in candidate.content.parts
+                    for p in (candidate.content.parts or [])
                     if p.function_call
                 ]
                 text_parts = [
                     p.text
-                    for p in candidate.content.parts
+                    for p in (candidate.content.parts or [])
                     if p.text
                 ]
 
@@ -221,7 +221,7 @@ class SplunkGuardAgent:
         prompt = build_splunk_prompt(question, earliest, latest) + f"\n\nContext:\n{context}"
 
         console.print("[dim]Sending to Gemini for analysis…[/]")
-        response = self._genai.models.generate_content(
+        response = await self._genai.aio.models.generate_content(
             model=_GEMINI_MODEL,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
@@ -242,10 +242,10 @@ def _fmt_args(args: dict[str, Any]) -> str:
 
 
 def _parse_report(text: str, question: str) -> SplunkInvestigationReport:
-    json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if json_match:
+    raw_json = _extract_json_block(text)
+    if raw_json is not None:
         try:
-            data = json.loads(json_match.group(1))
+            data = json.loads(_sanitize_json(raw_json))
             return SplunkInvestigationReport(
                 question=question,
                 root_cause=data.get("root_cause", "see full analysis"),
