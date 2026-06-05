@@ -46,7 +46,7 @@ Be specific — name the exact line in the log, the exact variable missing, the 
 
 def build_analysis_prompt(project: str, pipeline_id: int | None) -> str:
     """Return the user-turn prompt for a given project and optional pipeline."""
-    if pipeline_id:
+    if pipeline_id is not None:
         return (
             f"Diagnose the failure in pipeline #{pipeline_id} of GitLab project `{project}`. "
             "Use the available tools to fetch job details and full logs. "
