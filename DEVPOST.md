@@ -45,7 +45,7 @@ Auto-open MRs with the proposed fix (behind a human-approval gate), learn per-pr
 `Gemini 2.5 Flash` · `Vertex AI` · `GitLab MCP Server` · `Model Context Protocol` · `FastAPI` · `python-gitlab` · `Pydantic v2` · `google-genai SDK` · `Google Cloud Run` · `Splunk HEC` · `Docker`
 
 ## Links
-- **Live app (Google Cloud Run — PRIMARY):** PASTE_CLOUD_RUN_URL_HERE
+- **Live app (Google Cloud Run — PRIMARY):** https://pipeline-guard-fpgq3ij7ya-uc.a.run.app
   <!-- Deploy with `bash deploy_cloudrun.sh`; it prints a https://<service>-<hash>-<region>.run.app URL. Paste it above. Judges expect the app on Google Cloud, so this is the primary link. -->
 - **Live app (mirror — HF Space):** https://johnlee007-pipelineguard.hf.space
 - **Demo video:** https://youtu.be/aRnVnLhoHvs
