@@ -328,23 +328,31 @@ def make_app(
     )
 
     # Reject oversized request bodies before they are parsed (memory-exhaustion
-    # guard). Content-Length covers the normal case; chunked uploads without a
-    # declared length fall through, which is acceptable for this service.
-    from starlette.middleware.base import BaseHTTPMiddleware
+    # guard). Uses a pure ASGI middleware rather than BaseHTTPMiddleware to
+    # avoid Starlette's "No response returned" bug when route handlers raise
+    # exceptions (e.g. HTTPException or anyio ExceptionGroups).
     from starlette.responses import JSONResponse
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
-    class BodySizeLimitMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            if request.method == "POST":
-                content_length = request.headers.get("content-length")
-                if content_length is not None:
+    class BodySizeLimitMiddleware:
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] == "http" and scope.get("method") == "POST":
+                headers = dict(scope.get("headers", []))
+                cl = headers.get(b"content-length")
+                if cl is not None:
                     try:
-                        too_large = int(content_length) > MAX_WEBHOOK_BODY_BYTES
+                        if int(cl) > MAX_WEBHOOK_BODY_BYTES:
+                            resp = JSONResponse({"detail": "request body too large"}, status_code=413)
+                            await resp(scope, receive, send)
+                            return
                     except ValueError:
-                        return JSONResponse({"detail": "invalid Content-Length"}, status_code=400)
-                    if too_large:
-                        return JSONResponse({"detail": "request body too large"}, status_code=413)
-            return await call_next(request)
+                        resp = JSONResponse({"detail": "invalid Content-Length"}, status_code=400)
+                        await resp(scope, receive, send)
+                        return
+            await self.app(scope, receive, send)
 
     app.add_middleware(BodySizeLimitMiddleware)
 
