@@ -23,6 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,web]"
 
+      - name: Lint (ruff)
+        run: python -m ruff check .
+
       - name: Syntax / import check
         run: python -m compileall -q pipelineguard
 
