@@ -24,7 +24,8 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import gitlab
 import gitlab.exceptions
