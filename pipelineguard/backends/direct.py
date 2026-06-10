@@ -16,12 +16,31 @@ class DirectBackend:
     """Fetches GitLab pipeline data using the python-gitlab library directly."""
 
     def __init__(self, gitlab_token: str, gitlab_url: str = "https://gitlab.com") -> None:
-        self._gl = gitlab.Gitlab(gitlab_url, private_token=gitlab_token)
+        self._gitlab_url = gitlab_url
+        self._gl = (
+            gitlab.Gitlab(gitlab_url, private_token=gitlab_token)
+            if gitlab_token
+            else gitlab.Gitlab(gitlab_url)
+        )
 
     def get_failed_pipeline_data(
         self, project_path: str, pipeline_id: int | None = None
     ) -> dict[str, Any]:
-        """Return a dict with pipeline metadata and job logs for all failed jobs."""
+        """Return a dict with pipeline metadata and job logs for all failed jobs.
+
+        On a 401 (expired/revoked token) retries once anonymously so
+        public-repo diagnosis keeps working.
+        """
+        try:
+            return self._fetch_failed_pipeline_data(project_path, pipeline_id)
+        except gitlab.exceptions.GitlabAuthenticationError:
+            logger.warning("GitLab token rejected — retrying anonymously (public data only)")
+            self._gl = gitlab.Gitlab(self._gitlab_url)
+            return self._fetch_failed_pipeline_data(project_path, pipeline_id)
+
+    def _fetch_failed_pipeline_data(
+        self, project_path: str, pipeline_id: int | None = None
+    ) -> dict[str, Any]:
         project = self._gl.projects.get(project_path)
 
         if pipeline_id is not None:

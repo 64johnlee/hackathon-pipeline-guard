@@ -174,7 +174,7 @@ _LANDING_HTML = """<!DOCTYPE html>
                                             get_job_log · find_mr_by_sha
                                             create_merge_request_note
        │
-       ▼ Pydantic-validated DiagnosticReport
+       ▼ structured, schema-validated DiagnosisReport
        ├─ root_cause        (exact failure reason, not "build failed")
        ├─ failure_category  (env_var / dependency / flaky / config / code)
        ├─ fix_proposals     (unified diffs, high/med/low confidence)
@@ -199,6 +199,11 @@ _LANDING_HTML = """<!DOCTYPE html>
         <span class="method post">POST</span>
         <code>/demo</code>
         <span style="color:#8b949e;font-size:.88rem">Read-only diagnosis — <code>{"project":"org/repo","pipeline_id":123}</code> or <code>{"scenario":"env_var"}</code></span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method">GET</span>
+        <code>/demo?project=org/repo</code>
+        <span style="color:#8b949e;font-size:.88rem">Same diagnosis via query params — curl-friendly</span>
       </div>
       <div class="endpoint-row">
         <span class="method post">POST</span>
@@ -252,7 +257,9 @@ function loadPreset(key) {
 
 function catClass(cat) {
   const m = {env_var_missing:'cat-env',dependency_conflict:'cat-dep',
-             flaky:'cat-flaky',config_error:'cat-config',code_error:'cat-code'};
+             missing_dependency:'cat-dep',flaky:'cat-flaky',flaky_test:'cat-flaky',
+             config_error:'cat-config',code_error:'cat-code',logic_bug:'cat-code',
+             permissions:'cat-config'};
   return m[cat] || 'cat-unknown';
 }
 
@@ -277,25 +284,25 @@ function renderResult(data) {
   const jobs = (data.affected_jobs||[]).map(j=>'<span class="job-chip">'+esc(j)+'</span>').join('');
   const fixes = (data.fix_proposals||[]).map(f => {
     const confCls = f.confidence==='high'?'conf-high':f.confidence==='medium'?'conf-med':'conf-low';
-    return \`<div class="fix-card">
+    return `<div class="fix-card">
       <div class="fix-header">
-        <span class="fix-file">\${esc(f.file_path||'')}</span>
-        <span class="\${confCls}">\${esc(f.confidence||'')} confidence</span>
+        <span class="fix-file">${esc(f.file_path||'')}</span>
+        <span class="${confCls}">${esc(f.confidence||'')} confidence</span>
       </div>
-      <div class="fix-desc">\${esc(f.description||'')}</div>
-      \${f.diff ? '<div class="diff-block"><pre style="margin:0">'+renderDiff(f.diff)+'</pre></div>' : ''}
-    </div>\`;
+      <div class="fix-desc">${esc(f.description||'')}</div>
+      ${f.diff ? '<div class="diff-block"><pre style="margin:0">'+renderDiff(f.diff)+'</pre></div>' : ''}
+    </div>`;
   }).join('');
-  const timing = data._timing ? \`<span class="timing">\${esc(data._timing)}</span>\` : '';
-  return \`<div class="result-header">
-      <span class="cat-badge \${catClass(cat)}">\${esc(catLabel)}</span>
-      \${data.is_flaky ? '<span class="cat-badge cat-flaky">flaky</span>' : ''}
-      \${timing}
+  const timing = data._timing ? `<span class="timing">${esc(data._timing)}</span>` : '';
+  return `<div class="result-header">
+      <span class="cat-badge ${catClass(cat)}">${esc(catLabel)}</span>
+      ${data.is_flaky ? '<span class="cat-badge cat-flaky">flaky</span>' : ''}
+      ${timing}
     </div>
-    <div class="root-cause">&#x1F4CD; \${esc(data.root_cause||'')}</div>
-    \${data.full_analysis ? '<div class="analysis">'+esc(data.full_analysis)+'</div>' : ''}
-    \${jobs ? '<div class="jobs-row"><strong style="font-size:.82rem;color:#8b949e">Affected jobs: </strong>'+jobs+'</div>' : ''}
-    \${fixes}\`;
+    <div class="root-cause">&#x1F4CD; ${esc(data.root_cause||'')}</div>
+    ${data.full_analysis ? '<div class="analysis">'+esc(data.full_analysis)+'</div>' : ''}
+    ${jobs ? '<div class="jobs-row"><strong style="font-size:.82rem;color:#8b949e">Affected jobs: </strong>'+jobs+'</div>' : ''}
+    ${fixes}`;
 }
 
 async function runDemo() {
@@ -416,7 +423,7 @@ def make_app(
     """
     try:
         from fastapi import FastAPI, HTTPException
-        from fastapi.responses import HTMLResponse
+        from fastapi.responses import HTMLResponse, RedirectResponse
     except ImportError as exc:
         raise ImportError(
             "FastAPI is required for the webhook server. "
@@ -714,29 +721,19 @@ def make_app(
         },
     }
 
-    @app.post("/demo")
-    async def demo_diagnose(body: dict[str, Any]) -> dict[str, Any]:
-        """Demo endpoint: diagnose a GitLab pipeline by project + pipeline_id.
-
-        Body: {"project": "org/repo", "pipeline_id": 12345}
-            OR {"project": "demo", "scenario": "env_var|dependency|flaky|config|real"}
-        The agent is read-only; it will NOT post a comment on the MR.
-
-        If project=="demo" or no pipeline_id, returns a pre-canned scenario.
-        """
-        proj = body.get("project", "")
-        pid = body.get("pipeline_id")
-        scenario_key = body.get("scenario", "")
+    async def _run_demo(proj: str, pid: Any, scenario_key: str) -> dict[str, Any]:
+        """Shared demo logic: canned scenario for project=="demo" (or an explicit
+        scenario), real read-only diagnosis otherwise (no pipeline_id → latest failed)."""
         if not proj:
             raise HTTPException(status_code=422, detail="project is required")
 
         # Pre-canned scenario — instant response for demos
-        if proj == "demo" or not pid:
+        if proj == "demo" or scenario_key:
             key = scenario_key if scenario_key in _DEMO_SCENARIOS else "env_var"
             return _DEMO_SCENARIOS[key]
 
         pipeline_id: int | None = None
-        if pid is not None:
+        if pid not in (None, ""):
             try:
                 pipeline_id = int(pid)
             except (ValueError, TypeError):
@@ -774,6 +771,32 @@ def make_app(
             logger.exception("Demo diagnosis failed: %s", detail)
             raise HTTPException(status_code=500, detail="diagnosis failed")
 
+    @app.post("/demo")
+    async def demo_diagnose(body: dict[str, Any]) -> dict[str, Any]:
+        """Demo endpoint: diagnose a GitLab pipeline by project + pipeline_id.
+
+        Body: {"project": "org/repo", "pipeline_id": 12345}
+            OR {"project": "demo", "scenario": "env_var|dependency|flaky|config|real"}
+        The agent is read-only; it will NOT post a comment on the MR.
+        """
+        return await _run_demo(
+            body.get("project", ""), body.get("pipeline_id"), body.get("scenario", "")
+        )
+
+    @app.get("/demo")
+    async def demo_diagnose_get(
+        project: str = "", pipeline_id: str = "", scenario: str = ""
+    ) -> Any:
+        """GET variant of /demo for curl one-liners and browser links.
+
+        /demo?project=org/repo[&pipeline_id=123] — real read-only diagnosis
+        /demo?scenario=env_var — canned scenario
+        /demo (no params) — redirects to the interactive landing-page demo
+        """
+        if not project and not scenario:
+            return RedirectResponse("/")
+        return await _run_demo(project or "demo", pipeline_id, scenario)
+
     @app.post("/webhook/gitlab")
     async def gitlab_webhook(payload: dict[str, Any]) -> dict[str, str]:
         # X-Gitlab-Token validation is handled by GitLabTokenMiddleware (if WEBHOOK_SECRET is set).
@@ -789,7 +812,6 @@ def make_app(
 
         return result
 
-    # ---------------------------------------------------------------------------
     # Stripe subscription routes
     # ---------------------------------------------------------------------------
     from .stripe_integration import generate_pricing_html, create_checkout_session

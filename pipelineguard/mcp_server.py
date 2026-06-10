@@ -29,18 +29,27 @@ logger = logging.getLogger("pipelineguard.mcp_server")
 _DEFAULT_LOG_TAIL = 400
 
 
-def _get_client() -> gitlab.Gitlab:
+def _get_client(anonymous: bool = False) -> gitlab.Gitlab:
+    url = os.environ.get("GITLAB_URL", "https://gitlab.com")
     token = (
         os.environ.get("GITLAB_PERSONAL_ACCESS_TOKEN")
         or os.environ.get("GITLAB_TOKEN")
         or ""
     )
-    if not token:
-        raise RuntimeError(
-            "GITLAB_PERSONAL_ACCESS_TOKEN (or GITLAB_TOKEN) env var is required"
-        )
-    url = os.environ.get("GITLAB_URL", "https://gitlab.com")
+    if anonymous or not token:
+        # Public projects are fully readable without a token.
+        return gitlab.Gitlab(url)
     return gitlab.Gitlab(url, private_token=token)
+
+
+def _with_client(fn):
+    """Run fn(gl) with the authenticated client; on a 401 (expired/revoked
+    token) retry once anonymously so public-repo reads keep working."""
+    try:
+        return fn(_get_client())
+    except gitlab.exceptions.GitlabAuthenticationError:
+        logger.warning("GitLab token rejected — retrying anonymously (public data only)")
+        return fn(_get_client(anonymous=True))
 
 
 mcp = FastMCP("pipelineguard-mcp")
@@ -61,29 +70,31 @@ def list_pipelines(
 
     Returns JSON: list of {id, status, ref, sha, web_url, created_at, updated_at}.
     """
-    gl = _get_client()
-    project = gl.projects.get(project_id)
-    kwargs: dict[str, Any] = {
-        "per_page": max(1, min(per_page, 100)),
-        "order_by": "id",
-        "sort": "desc",
-    }
-    if status:
-        kwargs["status"] = status
-    pipelines = project.pipelines.list(**kwargs)
-    out = [
-        {
-            "id": p.id,
-            "status": p.status,
-            "ref": getattr(p, "ref", ""),
-            "sha": getattr(p, "sha", ""),
-            "web_url": getattr(p, "web_url", ""),
-            "created_at": getattr(p, "created_at", ""),
-            "updated_at": getattr(p, "updated_at", ""),
+    def _q(gl: gitlab.Gitlab) -> str:
+        project = gl.projects.get(project_id)
+        kwargs: dict[str, Any] = {
+            "per_page": max(1, min(per_page, 100)),
+            "order_by": "id",
+            "sort": "desc",
         }
-        for p in pipelines
-    ]
-    return json.dumps(out)
+        if status:
+            kwargs["status"] = status
+        pipelines = project.pipelines.list(**kwargs)
+        out = [
+            {
+                "id": p.id,
+                "status": p.status,
+                "ref": getattr(p, "ref", ""),
+                "sha": getattr(p, "sha", ""),
+                "web_url": getattr(p, "web_url", ""),
+                "created_at": getattr(p, "created_at", ""),
+                "updated_at": getattr(p, "updated_at", ""),
+            }
+            for p in pipelines
+        ]
+        return json.dumps(out)
+
+    return _with_client(_q)
 
 
 @mcp.tool()
@@ -96,22 +107,24 @@ def get_pipeline_jobs(project_id: str, pipeline_id: int) -> str:
 
     Returns JSON: list of {id, name, stage, status, failure_reason, web_url}.
     """
-    gl = _get_client()
-    project = gl.projects.get(project_id)
-    pipeline = project.pipelines.get(pipeline_id)
-    jobs = pipeline.jobs.list(all=True)
-    out = [
-        {
-            "id": j.id,
-            "name": j.name,
-            "stage": getattr(j, "stage", ""),
-            "status": j.status,
-            "failure_reason": getattr(j, "failure_reason", None),
-            "web_url": getattr(j, "web_url", ""),
-        }
-        for j in jobs
-    ]
-    return json.dumps(out)
+    def _q(gl: gitlab.Gitlab) -> str:
+        project = gl.projects.get(project_id)
+        pipeline = project.pipelines.get(pipeline_id)
+        jobs = pipeline.jobs.list(all=True)
+        out = [
+            {
+                "id": j.id,
+                "name": j.name,
+                "stage": getattr(j, "stage", ""),
+                "status": j.status,
+                "failure_reason": getattr(j, "failure_reason", None),
+                "web_url": getattr(j, "web_url", ""),
+            }
+            for j in jobs
+        ]
+        return json.dumps(out)
+
+    return _with_client(_q)
 
 
 @mcp.tool()
@@ -129,19 +142,21 @@ def get_job_log(
 
     Returns the log text directly. Large logs are tail-truncated to fit LLM context.
     """
-    gl = _get_client()
-    project = gl.projects.get(project_id)
-    try:
-        raw = project.jobs.get(job_id).trace()
-    except gitlab.exceptions.GitlabGetError:
-        return "(log unavailable)"
-    text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
-    if tail_lines <= 0:
-        return text
-    lines = text.splitlines()
-    if len(lines) <= tail_lines:
-        return text
-    return "\n".join(lines[-tail_lines:])
+    def _q(gl: gitlab.Gitlab) -> str:
+        project = gl.projects.get(project_id)
+        try:
+            raw = project.jobs.get(job_id).trace()
+        except gitlab.exceptions.GitlabGetError:
+            return "(log unavailable)"
+        text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+        if tail_lines <= 0:
+            return text
+        lines = text.splitlines()
+        if len(lines) <= tail_lines:
+            return text
+        return "\n".join(lines[-tail_lines:])
+
+    return _with_client(_q)
 
 
 @mcp.tool()
@@ -154,19 +169,21 @@ def find_merge_request_by_sha(project_id: str, sha: str) -> str:
 
     Returns JSON: {iid, web_url, title} of the matching MR, or {} if none.
     """
-    gl = _get_client()
-    project = gl.projects.get(project_id)
-    mrs = project.mergerequests.list(state="opened", per_page=50, order_by="updated_at")
-    for mr in mrs:
-        if getattr(mr, "sha", None) == sha:
-            return json.dumps(
-                {
-                    "iid": mr.iid,
-                    "web_url": mr.web_url,
-                    "title": getattr(mr, "title", ""),
-                }
-            )
-    return json.dumps({})
+    def _q(gl: gitlab.Gitlab) -> str:
+        project = gl.projects.get(project_id)
+        mrs = project.mergerequests.list(state="opened", per_page=50, order_by="updated_at")
+        for mr in mrs:
+            if getattr(mr, "sha", None) == sha:
+                return json.dumps(
+                    {
+                        "iid": mr.iid,
+                        "web_url": mr.web_url,
+                        "title": getattr(mr, "title", ""),
+                    }
+                )
+        return json.dumps({})
+
+    return _with_client(_q)
 
 
 @mcp.tool()
@@ -184,16 +201,20 @@ def create_merge_request_note(
 
     Returns JSON: {note_id, web_url} of the created note.
     """
-    gl = _get_client()
-    project = gl.projects.get(project_id)
-    mr = project.mergerequests.get(merge_request_iid)
-    note = mr.notes.create({"body": body})
-    return json.dumps(
-        {
-            "note_id": note.id,
-            "web_url": f"{mr.web_url}#note_{note.id}",
-        }
-    )
+    # Note: posting requires a valid token — no anonymous fallback can help here,
+    # but _with_client keeps the error message consistent with the other tools.
+    def _q(gl: gitlab.Gitlab) -> str:
+        project = gl.projects.get(project_id)
+        mr = project.mergerequests.get(merge_request_iid)
+        note = mr.notes.create({"body": body})
+        return json.dumps(
+            {
+                "note_id": note.id,
+                "web_url": f"{mr.web_url}#note_{note.id}",
+            }
+        )
+
+    return _with_client(_q)
 
 
 def main() -> None:

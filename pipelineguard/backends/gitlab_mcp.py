@@ -17,6 +17,7 @@ full diagnosis without interruption.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_PREFIX = "gl_"
 _PREFIX_HEADER = "X-Gitlab-Mcp-Server-Tool-Name-Prefix"
+_CONNECT_TIMEOUT_S = 12.0
 
 
 class GitLabOfficialMCPBackend:
@@ -51,47 +53,66 @@ class GitLabOfficialMCPBackend:
             _PREFIX_HEADER: TOOL_PREFIX,
         }
         self._session: ClientSession | None = None
-        self._cm = None
+        self._task: asyncio.Task[None] | None = None
+        self._ready: asyncio.Event | None = None
+        self._closing: asyncio.Event | None = None
         self.connected = False
 
-    async def __aenter__(self) -> "GitLabOfficialMCPBackend":
+    async def _run_connection(self) -> None:
+        # anyio cancel scopes must be entered and exited in the same task.
+        # streamablehttp_client opens an internal task group, so the whole
+        # connection lifecycle lives in this dedicated task; abandoning it
+        # mid-task (the previous approach) corrupted the caller's cancel
+        # scope stack and cancelled unrelated in-flight requests.
         try:
-            self._cm = streamablehttp_client(self._mcp_url, headers=self._headers)
-            read, write, _ = await self._cm.__aenter__()
-            self._session = ClientSession(read, write)
-            await self._session.__aenter__()
-            await self._session.initialize()
-            self.connected = True
-            logger.info("Official GitLab MCP server connected (%s)", self._mcp_url)
+            async with streamablehttp_client(self._mcp_url, headers=self._headers) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    self._session = session
+                    self.connected = True
+                    logger.info("Official GitLab MCP server connected (%s)", self._mcp_url)
+                    self._ready.set()
+                    await self._closing.wait()
+        except asyncio.CancelledError:
+            pass  # cancelled by __aenter__ timeout or __aexit__ — expected
         except BaseException as exc:
-            # anyio raises CancelledError (BaseException) and BaseExceptionGroup
-            # (also BaseException) when task group sub-tasks fail — neither is
-            # caught by plain `except Exception`. Re-raise true process signals;
-            # for everything else, degrade gracefully.
-            # Do NOT call __aexit__ on self._cm: streamablehttp_client's async
-            # generator teardown triggers "cancel scope in wrong task" errors.
-            # Let asyncio GC the generator — safe in a long-lived FastAPI loop.
-            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
-            self._session = None
-            self._cm = None
             logger.warning(
                 "Official GitLab MCP server unavailable — %s. "
                 "Pipeline diagnosis continues with the bundled MCP server.",
                 exc,
             )
+        finally:
+            self.connected = False
+            self._session = None
+            if self._ready is not None:
+                self._ready.set()
+
+    async def __aenter__(self) -> "GitLabOfficialMCPBackend":
+        self._ready = asyncio.Event()
+        self._closing = asyncio.Event()
+        self._task = asyncio.create_task(self._run_connection())
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=_CONNECT_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Official GitLab MCP connect timed out after %.0fs — "
+                "using the bundled MCP server only.",
+                _CONNECT_TIMEOUT_S,
+            )
+            self._task.cancel()
         return self
 
     async def __aexit__(self, *exc_info: Any) -> None:
-        if self._session:
+        if self._closing is not None:
+            self._closing.set()
+        if self._task is not None:
             try:
-                await self._session.__aexit__(*exc_info)
-            except BaseException:
-                pass
-        if self._cm:
-            try:
-                await self._cm.__aexit__(*exc_info)
-            except BaseException:
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+            except (asyncio.CancelledError, Exception):
                 pass
 
     async def list_tools_as_gemini(self) -> list[types.Tool]:

@@ -7,6 +7,7 @@ from typing import Any
 
 import anyio
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from rich.console import Console
 from rich.panel import Panel
@@ -59,6 +60,18 @@ class PipelineGuardAgent:
         self._gitlab_token = gitlab_token
         self._gitlab_url = gitlab_url
         self._use_mcp = (not force_direct) and MCPBackend.is_available()
+
+    async def _generate_with_retry(self, **kwargs: Any) -> Any:
+        """generate_content with backoff on transient 5xx (model overloaded)."""
+        for attempt in range(3):
+            try:
+                return await self._genai.aio.models.generate_content(**kwargs)
+            except genai_errors.ServerError as exc:
+                if attempt == 2:
+                    raise
+                delay = 3 * (attempt + 1)
+                logger.warning("Gemini transient error (%s) — retrying in %ss", exc, delay)
+                await anyio.sleep(delay)
 
     async def diagnose(
         self,
@@ -146,7 +159,7 @@ class PipelineGuardAgent:
             for iteration in range(1, _MAX_TOOL_ITERATIONS + 1):
                 progress.update(task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…")
 
-                response = await self._genai.aio.models.generate_content(
+                response = await self._generate_with_retry(
                     model=_GEMINI_MODEL,
                     contents=messages,
                     config=types.GenerateContentConfig(
@@ -224,7 +237,7 @@ class PipelineGuardAgent:
         prompt = _build_direct_prompt(data)
         console.print("[dim]Sending to Gemini for analysis…[/]")
 
-        response = await self._genai.aio.models.generate_content(
+        response = await self._generate_with_retry(
             model=_GEMINI_MODEL,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
