@@ -41,7 +41,7 @@ class MCPBackend:
         """Return True if the mcp package is installed (the server ships with this package)."""
         return _MCP_AVAILABLE
 
-    async def __aenter__(self) -> "MCPBackend":
+    async def __aenter__(self) -> MCPBackend:
         if not _MCP_AVAILABLE:
             raise RuntimeError(
                 "The 'mcp' Python package is not installed. "

@@ -65,7 +65,7 @@ class SplunkMCPBackend:
             logger.debug("Splunk MCP reachability check failed: %s", exc)
             return False
 
-    async def __aenter__(self) -> "SplunkMCPBackend":
+    async def __aenter__(self) -> SplunkMCPBackend:
         if not _MCP_AVAILABLE:
             raise RuntimeError(
                 "The 'mcp' Python package is not installed. Run: pip install mcp"
