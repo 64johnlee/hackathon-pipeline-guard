@@ -91,7 +91,7 @@ class GitLabOfficialMCPBackend:
             if self._ready is not None:
                 self._ready.set()
 
-    async def __aenter__(self) -> "GitLabOfficialMCPBackend":
+    async def __aenter__(self) -> GitLabOfficialMCPBackend:
         self._ready = asyncio.Event()
         self._closing = asyncio.Event()
         self._task = asyncio.create_task(self._run_connection())
