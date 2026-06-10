@@ -1,4 +1,5 @@
 """Splunk direct backend — queries Splunk REST API without the MCP server."""
+
 from __future__ import annotations
 
 import logging
@@ -9,8 +10,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_POLL_INTERVAL = 0.5   # seconds between job status polls
-_MAX_WAIT = 30.0       # max seconds to wait for a search job to complete
+_POLL_INTERVAL = 0.5  # seconds between job status polls
+_MAX_WAIT = 30.0  # max seconds to wait for a search job to complete
 _DEFAULT_MAX_RESULTS = 100
 
 

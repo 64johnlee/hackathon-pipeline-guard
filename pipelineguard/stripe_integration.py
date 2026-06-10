@@ -1,4 +1,5 @@
 """Stripe payment integration for PipelineGuard subscription tiers."""
+
 import os
 from typing import Any
 
@@ -370,6 +371,7 @@ async def create_checkout_session(plan: str, customer_email: str = "") -> dict[s
 
     try:
         import stripe
+
         stripe.api_key = STRIPE_SECRET_KEY
 
         session = stripe.checkout.Session.create(

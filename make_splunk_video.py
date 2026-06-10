@@ -5,6 +5,7 @@ only the SCRIPT content and output filename differ.
 
 Output: demo/splunkguard_demo.mp4
 """
+
 from __future__ import annotations
 
 import shutil
@@ -108,7 +109,7 @@ SCRIPT: list[Segment] = [
             _l(""),
             _green("  Ask in plain English. Gemini writes the SPL. You get the answer."),
             _l(""),
-            _dim("  One command:  pipelineguard splunk investigate \"<question>\""),
+            _dim('  One command:  pipelineguard splunk investigate "<question>"'),
         ],
         hold_frames=FPS * 8,
         typing_speed=1,
@@ -160,7 +161,10 @@ SCRIPT: list[Segment] = [
             _l(""),
             _cyan("  # Step 1: ingest real GitLab CI/CD data into Splunk via HEC", bold=True),
             _l(""),
-            _l("  $ pipelineguard splunk ingest gitlab-org/cli --since -7d --max-pipelines 30", GREEN),
+            _l(
+                "  $ pipelineguard splunk ingest gitlab-org/cli --since -7d --max-pipelines 30",
+                GREEN,
+            ),
             _l(""),
             _dim("  ╭─────────────────────────────────────────────────────────────╮"),
             _dim("  │  GitLab → Splunk                                            │"),
@@ -185,11 +189,13 @@ SCRIPT: list[Segment] = [
     Segment(
         lines=[
             _l(""),
-            _cyan("  # Step 2: ask Splunk a question in plain English (MCP mode = default)", bold=True),
+            _cyan(
+                "  # Step 2: ask Splunk a question in plain English (MCP mode = default)", bold=True
+            ),
             _l(""),
-            _l('  $ pipelineguard splunk investigate \\', GREEN),
+            _l("  $ pipelineguard splunk investigate \\", GREEN),
             _l('      "What CI pipelines failed and why?" \\', GREEN),
-            _l('      --earliest -30d', GREEN),
+            _l("      --earliest -30d", GREEN),
             _l(""),
             _dim("  (omit --direct to use the MCP path against Splunkbase App #7931)"),
         ],
@@ -208,14 +214,14 @@ SCRIPT: list[Segment] = [
             _green("  Splunk MCP Server ready"),
             _l(""),
             _cyan("  Iteration 1/15 …", bold=True),
-            _green("  → splunk_run_query({\"query\": \"search index=pipelineguard"),
+            _green('  → splunk_run_query({"query": "search index=pipelineguard'),
             _green("      sourcetype=gitlab:job status=failed | stats count by"),
-            _green("      failure_reason, name | sort -count\"})"),
+            _green('      failure_reason, name | sort -count"})'),
             _l(""),
             _cyan("  Iteration 2/15 …", bold=True),
-            _green("  → splunk_run_query({\"query\": \"search index=pipelineguard"),
+            _green('  → splunk_run_query({"query": "search index=pipelineguard'),
             _green("      name=code_navigation_golang status=failed | head 5"),
-            _green("      | table _time, project, failure_reason\"})"),
+            _green('      | table _time, project, failure_reason"})'),
             _l(""),
             _dim("  Synthesizing structured report …"),
         ],
@@ -229,7 +235,7 @@ SCRIPT: list[Segment] = [
             _l(""),
             _dim("  {"),
             _yellow('    "root_cause":'),
-            _l('      "Multiple CI pipeline jobs in \'gitlab-org/cli\' are'),
+            _l("      \"Multiple CI pipeline jobs in 'gitlab-org/cli' are"),
             _l('       failing due to script errors",'),
             _yellow('    "investigation_category":'),
             _green('      "pipeline_failure",'),
@@ -237,7 +243,7 @@ SCRIPT: list[Segment] = [
             _l('      "gitlab-org/cli project",'),
             _l('      "code_navigation_golang job",     ← specific job names'),
             _l('      "tests:unit job"                  ← MCP found these'),
-            _l('    ],'),
+            _l("    ],"),
             _yellow('    "time_range":'),
             _l('      "2026-05-26 20:35 UTC – 2026-05-27 07:20 UTC",'),
             _yellow('    "is_ongoing": true,            ← MCP inferred this'),
@@ -350,12 +356,22 @@ def generate_frames() -> int:
 def encode_video(frame_count: int) -> None:
     OUT_VIDEO.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y",
-        "-framerate", str(FPS),
-        "-i", str(FRAMES_DIR / "frame_%06d.png"),
-        "-c:v", "libx264", "-preset", "slow", "-crf", "22",
-        "-pix_fmt", "yuv420p",
-        "-vf", f"scale={W}:{H}",
+        "ffmpeg",
+        "-y",
+        "-framerate",
+        str(FPS),
+        "-i",
+        str(FRAMES_DIR / "frame_%06d.png"),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "slow",
+        "-crf",
+        "22",
+        "-pix_fmt",
+        "yuv420p",
+        "-vf",
+        f"scale={W}:{H}",
         str(OUT_VIDEO),
     ]
     print("Encoding…")

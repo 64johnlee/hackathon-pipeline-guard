@@ -1,4 +1,5 @@
 """Direct python-gitlab backend — no MCP server required."""
+
 from __future__ import annotations
 
 import logging
@@ -46,9 +47,7 @@ class DirectBackend:
         if pipeline_id is not None:
             pipeline = project.pipelines.get(pipeline_id)
         else:
-            failed = project.pipelines.list(
-                status="failed", per_page=1, order_by="id", sort="desc"
-            )
+            failed = project.pipelines.list(status="failed", per_page=1, order_by="id", sort="desc")
             if not failed:
                 raise ValueError(f"No failed pipelines found in {project_path!r}")
             pipeline = failed[0]
@@ -91,14 +90,10 @@ class DirectBackend:
             "failed_jobs": job_data,
         }
 
-    def post_pipeline_comment(
-        self, project_path: str, pipeline_sha: str, comment: str
-    ) -> str:
+    def post_pipeline_comment(self, project_path: str, pipeline_sha: str, comment: str) -> str:
         """Post a note on the MR associated with pipeline_sha, or return '' if none."""
         project = self._gl.projects.get(project_path)
-        mrs = project.mergerequests.list(
-            state="opened", per_page=50, order_by="updated_at"
-        )
+        mrs = project.mergerequests.list(state="opened", per_page=50, order_by="updated_at")
         for mr in mrs:
             if getattr(mr, "sha", None) == pipeline_sha:
                 note = mr.notes.create({"body": comment})

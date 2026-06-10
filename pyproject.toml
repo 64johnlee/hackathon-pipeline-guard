@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pipelineguard"
 version = "0.1.0"
-description = "AI-powered GitLab CI pipeline monitoring and auto-fix agent using Gemini"
+description = "AI-powered GitLab CI pipeline monitoring and auto-fix agent using Gemini — UiPath Maestro + Google Cloud integration"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -38,7 +38,7 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B", "SIM"]
+select = ["E", "F", "W", "B", "SIM", "UP"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]

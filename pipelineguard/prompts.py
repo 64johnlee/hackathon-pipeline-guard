@@ -1,4 +1,5 @@
 """Prompts for the PipelineGuard Gemini agent."""
+
 from __future__ import annotations
 
 SYSTEM_PROMPT = """You are PipelineGuard, an expert GitLab CI/CD diagnostic agent.

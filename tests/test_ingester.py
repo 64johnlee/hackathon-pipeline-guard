@@ -1,4 +1,5 @@
 """Tests for pipelineguard.ingesters.gitlab_to_splunk."""
+
 from __future__ import annotations
 
 import json
@@ -20,6 +21,7 @@ from pipelineguard.ingesters.gitlab_to_splunk import (
 # ---------------------------------------------------------------------------
 # parse_since
 # ---------------------------------------------------------------------------
+
 
 class TestParseSince:
     def test_relative_days(self) -> None:
@@ -48,9 +50,7 @@ class TestParseSince:
         assert abs((now - result - timedelta(weeks=2)).total_seconds()) < 5
 
     def test_iso_with_z(self) -> None:
-        assert parse_since("2026-05-20T00:00:00Z") == datetime(
-            2026, 5, 20, tzinfo=timezone.utc
-        )
+        assert parse_since("2026-05-20T00:00:00Z") == datetime(2026, 5, 20, tzinfo=timezone.utc)
 
     def test_iso_with_offset(self) -> None:
         assert parse_since("2026-05-20T00:00:00+00:00") == datetime(
@@ -73,6 +73,7 @@ class TestParseSince:
 # ---------------------------------------------------------------------------
 # _to_epoch
 # ---------------------------------------------------------------------------
+
 
 class TestToEpoch:
     def test_none_returns_none(self) -> None:
@@ -99,6 +100,7 @@ class TestToEpoch:
 # Ingester construction
 # ---------------------------------------------------------------------------
 
+
 class TestIngesterInit:
     def test_missing_hec_token_raises(self) -> None:
         with pytest.raises(ValueError, match="hec_token is required"):
@@ -115,9 +117,7 @@ class TestIngesterInit:
 
     @patch("pipelineguard.ingesters.gitlab_to_splunk.gitlab.Gitlab")
     def test_hec_auth_header_format(self, _gl: MagicMock) -> None:
-        ing = GitLabToSplunkIngester(
-            gitlab_token="x", hec_url="https://h:8088", hec_token="sekret"
-        )
+        ing = GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="sekret")
         assert ing._hec_headers["Authorization"] == "Splunk sekret"
         assert ing._hec_headers["Content-Type"] == "application/json"
 
@@ -125,6 +125,7 @@ class TestIngesterInit:
 # ---------------------------------------------------------------------------
 # Event construction
 # ---------------------------------------------------------------------------
+
 
 def _make_pipeline(**overrides) -> MagicMock:
     pipeline = MagicMock()
@@ -161,9 +162,7 @@ def _make_job(**overrides) -> MagicMock:
 @patch("pipelineguard.ingesters.gitlab_to_splunk.gitlab.Gitlab")
 class TestEventShapes:
     def _make_ingester(self) -> GitLabToSplunkIngester:
-        return GitLabToSplunkIngester(
-            gitlab_token="x", hec_url="https://h:8088", hec_token="t"
-        )
+        return GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="t")
 
     def test_pipeline_event_shape(self, _gl: MagicMock) -> None:
         ing = self._make_ingester()
@@ -189,9 +188,7 @@ class TestEventShapes:
         ing = self._make_ingester()
         project = MagicMock()
         project.jobs.get.return_value.trace.return_value = b"line1\nline2\nERROR boom\n"
-        event = ing._job_event(
-            "demo/repo", _make_pipeline(), _make_job(status="failed"), project
-        )
+        event = ing._job_event("demo/repo", _make_pipeline(), _make_job(status="failed"), project)
         assert event["sourcetype"] == "gitlab:job"
         assert "ERROR boom" in event["event"]["log_tail"]
         assert event["event"]["failure_reason"] == "script_failure"
@@ -200,17 +197,13 @@ class TestEventShapes:
         ing = self._make_ingester()
         project = MagicMock()
         project.jobs.get.return_value.trace.return_value = "canceled output"
-        event = ing._job_event(
-            "demo/repo", _make_pipeline(), _make_job(status="canceled"), project
-        )
+        event = ing._job_event("demo/repo", _make_pipeline(), _make_job(status="canceled"), project)
         assert event["event"]["log_tail"] == "canceled output"
 
     def test_success_job_omits_log_tail(self, _gl: MagicMock) -> None:
         ing = self._make_ingester()
         project = MagicMock()
-        event = ing._job_event(
-            "demo/repo", _make_pipeline(), _make_job(status="success"), project
-        )
+        event = ing._job_event("demo/repo", _make_pipeline(), _make_job(status="success"), project)
         assert event["event"]["log_tail"] == ""
         project.jobs.get.assert_not_called()
 
@@ -225,9 +218,7 @@ class TestEventShapes:
         project.jobs.get.return_value.trace.return_value = "\n".join(
             f"line{i}" for i in range(1, 11)
         )
-        event = ing._job_event(
-            "demo/repo", _make_pipeline(), _make_job(status="failed"), project
-        )
+        event = ing._job_event("demo/repo", _make_pipeline(), _make_job(status="failed"), project)
         tail_lines = event["event"]["log_tail"].splitlines()
         assert tail_lines == ["line8", "line9", "line10"]
 
@@ -237,9 +228,7 @@ class TestEventShapes:
         project.jobs.get.side_effect = gitlab.exceptions.GitlabGetError(
             "not found", response_code=404
         )
-        event = ing._job_event(
-            "demo/repo", _make_pipeline(), _make_job(status="failed"), project
-        )
+        event = ing._job_event("demo/repo", _make_pipeline(), _make_job(status="failed"), project)
         assert event["event"]["log_tail"] == ""
 
 
@@ -247,17 +236,14 @@ class TestEventShapes:
 # HEC POST
 # ---------------------------------------------------------------------------
 
+
 @patch("pipelineguard.ingesters.gitlab_to_splunk.gitlab.Gitlab")
 class TestPostBatch:
     def _make_ingester(self) -> GitLabToSplunkIngester:
-        return GitLabToSplunkIngester(
-            gitlab_token="x", hec_url="https://h:8088", hec_token="t"
-        )
+        return GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="t")
 
     @patch("pipelineguard.ingesters.gitlab_to_splunk.httpx.Client")
-    def test_success_returns_event_count(
-        self, mock_client_cls: MagicMock, _gl: MagicMock
-    ) -> None:
+    def test_success_returns_event_count(self, mock_client_cls: MagicMock, _gl: MagicMock) -> None:
         ing = self._make_ingester()
         events = [
             {"time": 1.0, "index": "pipelineguard", "sourcetype": "x", "event": {"a": 1}},
@@ -284,9 +270,7 @@ class TestPostBatch:
             json.loads(line)  # must parse
 
     @patch("pipelineguard.ingesters.gitlab_to_splunk.httpx.Client")
-    def test_http_error_increments_stats(
-        self, mock_client_cls: MagicMock, _gl: MagicMock
-    ) -> None:
+    def test_http_error_increments_stats(self, mock_client_cls: MagicMock, _gl: MagicMock) -> None:
         ing = self._make_ingester()
         stats = IngestStats()
 
@@ -303,11 +287,10 @@ class TestPostBatch:
 # End-to-end ingest_project
 # ---------------------------------------------------------------------------
 
+
 @patch("pipelineguard.ingesters.gitlab_to_splunk.httpx.Client")
 @patch("pipelineguard.ingesters.gitlab_to_splunk.gitlab.Gitlab")
-def test_ingest_project_happy_path(
-    mock_gitlab_cls: MagicMock, mock_client_cls: MagicMock
-) -> None:
+def test_ingest_project_happy_path(mock_gitlab_cls: MagicMock, mock_client_cls: MagicMock) -> None:
     p = _make_pipeline()
     failed_job = _make_job(status="failed", id=1001, name="deploy")
     ok_job = _make_job(status="success", id=1002, name="test", failure_reason=None)
@@ -327,9 +310,7 @@ def test_ingest_project_happy_path(
     mock_client.post.return_value = mock_resp
     mock_client_cls.return_value.__enter__.return_value = mock_client
 
-    ing = GitLabToSplunkIngester(
-        gitlab_token="x", hec_url="https://h:8088", hec_token="t"
-    )
+    ing = GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="t")
     stats = ing.ingest_project("demo/repo", since="-7d")
 
     assert stats.pipelines == 1
@@ -370,9 +351,7 @@ def test_ingest_project_max_pipelines_cap(
     mock_client.post.return_value = mock_resp
     mock_client_cls.return_value.__enter__.return_value = mock_client
 
-    ing = GitLabToSplunkIngester(
-        gitlab_token="x", hec_url="https://h:8088", hec_token="t"
-    )
+    ing = GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="t")
     stats = ing.ingest_project("demo/repo", since="-7d", max_pipelines=3)
 
     assert stats.pipelines == 3
@@ -388,9 +367,7 @@ def test_ingest_project_empty(mock_gitlab_cls: MagicMock) -> None:
     gl_instance.projects.get.return_value = project
     mock_gitlab_cls.return_value = gl_instance
 
-    ing = GitLabToSplunkIngester(
-        gitlab_token="x", hec_url="https://h:8088", hec_token="t"
-    )
+    ing = GitLabToSplunkIngester(gitlab_token="x", hec_url="https://h:8088", hec_token="t")
     stats = ing.ingest_project("demo/repo", since="-7d")
 
     assert stats.pipelines == 0

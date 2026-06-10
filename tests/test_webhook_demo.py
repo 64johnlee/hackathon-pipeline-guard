@@ -1,4 +1,5 @@
 """Tests for the /demo endpoints (GET + POST) and landing page integrity."""
+
 from __future__ import annotations
 
 import re
@@ -149,3 +150,70 @@ def test_health_endpoint_has_service_field(client):
     assert data["status"] == "ok"
     assert data["service"] == "PipelineGuard"
     assert "backend" in data
+
+
+# ---------------------------------------------------------------------------
+# /api/diagnose  (UiPath DiagnoseWithAI.xaml endpoint)
+# ---------------------------------------------------------------------------
+
+
+def test_api_diagnose_returns_full_report(client):
+    resp = client.post("/api/diagnose", json={"project": "org/repo", "pipeline_id": 99})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["root_cause"] == "stub root cause"
+    assert "failure_category" in data
+    assert "fix_proposals" in data
+    call = StubAgent.last_instance.calls[-1]
+    assert call["project"] == "org/repo"
+    assert call["pipeline_id"] == 99
+    assert call["post_comment"] is False
+
+
+def test_api_diagnose_missing_project_422(client):
+    resp = client.post("/api/diagnose", json={})
+    assert resp.status_code == 422
+
+
+def test_api_diagnose_bad_pipeline_id_422(client):
+    resp = client.post("/api/diagnose", json={"project": "org/repo", "pipeline_id": "bad"})
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# /api/uipath/callback  (UiPath PostApprovedFix.xaml endpoint)
+# ---------------------------------------------------------------------------
+
+
+def test_uipath_callback_approve_posts_fix(client):
+    body = {"case_id": "C-1", "action": "approve", "project": "org/repo", "pipeline_id": 42}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "fix_posted"
+    assert data["case_id"] == "C-1"
+    assert "comment_url" in data
+    call = StubAgent.last_instance.calls[-1]
+    assert call["post_comment"] is True
+    assert call["project"] == "org/repo"
+
+
+def test_uipath_callback_reject_skips_diagnose(client):
+    body = {"case_id": "C-2", "action": "reject", "project": "org/repo"}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "rejected"
+    assert data["case_id"] == "C-2"
+
+
+def test_uipath_callback_invalid_action_422(client):
+    body = {"case_id": "C-3", "action": "snooze", "project": "org/repo"}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 422
+
+
+def test_uipath_callback_missing_project_422(client):
+    body = {"case_id": "C-4", "action": "approve"}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 422

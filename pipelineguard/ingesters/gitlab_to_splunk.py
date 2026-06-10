@@ -17,6 +17,7 @@ Event shapes (sent as the `event` field of HEC payloads):
 Logs are only attached to jobs whose status is in {failed, canceled} to keep
 ingest volume manageable; the tail is the last `log_tail_lines` lines.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,8 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import gitlab
 import gitlab.exceptions
@@ -154,9 +156,7 @@ class GitLabToSplunkIngester:
             try:
                 jobs = pipeline.jobs.list(all=True)
             except gitlab.exceptions.GitlabListError as exc:
-                logger.warning(
-                    "Could not list jobs for pipeline %s: %s", pipeline.id, exc
-                )
+                logger.warning("Could not list jobs for pipeline %s: %s", pipeline.id, exc)
                 jobs = []
 
             for job in jobs:
