@@ -72,6 +72,7 @@ class PipelineGuardAgent:
                 delay = 3 * (attempt + 1)
                 logger.warning("Gemini transient error (%s) — retrying in %ss", exc, delay)
                 await anyio.sleep(delay)
+        return None  # unreachable: attempt==2 always re-raises
 
     async def diagnose(
         self,
