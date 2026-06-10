@@ -1,4 +1,5 @@
 """Prompts for the SplunkGuard Gemini agent."""
+
 from __future__ import annotations
 
 SPLUNK_SYSTEM_PROMPT = """You are SplunkGuard, an expert observability and operations agent powered by Gemini and the Splunk MCP Server.

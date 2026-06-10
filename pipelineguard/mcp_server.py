@@ -13,6 +13,7 @@ Configuration (env vars):
     GITLAB_TOKEN                  Fallback name for the PAT (compatibility)
     GITLAB_URL                    GitLab base URL (default: https://gitlab.com)
 """
+
 from __future__ import annotations
 
 import json
@@ -31,11 +32,7 @@ _DEFAULT_LOG_TAIL = 400
 
 def _get_client(anonymous: bool = False) -> gitlab.Gitlab:
     url = os.environ.get("GITLAB_URL", "https://gitlab.com")
-    token = (
-        os.environ.get("GITLAB_PERSONAL_ACCESS_TOKEN")
-        or os.environ.get("GITLAB_TOKEN")
-        or ""
-    )
+    token = os.environ.get("GITLAB_PERSONAL_ACCESS_TOKEN") or os.environ.get("GITLAB_TOKEN") or ""
     if anonymous or not token:
         # Public projects are fully readable without a token.
         return gitlab.Gitlab(url)
@@ -70,6 +67,7 @@ def list_pipelines(
 
     Returns JSON: list of {id, status, ref, sha, web_url, created_at, updated_at}.
     """
+
     def _q(gl: gitlab.Gitlab) -> str:
         project = gl.projects.get(project_id)
         kwargs: dict[str, Any] = {
@@ -107,6 +105,7 @@ def get_pipeline_jobs(project_id: str, pipeline_id: int) -> str:
 
     Returns JSON: list of {id, name, stage, status, failure_reason, web_url}.
     """
+
     def _q(gl: gitlab.Gitlab) -> str:
         project = gl.projects.get(project_id)
         pipeline = project.pipelines.get(pipeline_id)
@@ -142,6 +141,7 @@ def get_job_log(
 
     Returns the log text directly. Large logs are tail-truncated to fit LLM context.
     """
+
     def _q(gl: gitlab.Gitlab) -> str:
         project = gl.projects.get(project_id)
         try:
@@ -169,6 +169,7 @@ def find_merge_request_by_sha(project_id: str, sha: str) -> str:
 
     Returns JSON: {iid, web_url, title} of the matching MR, or {} if none.
     """
+
     def _q(gl: gitlab.Gitlab) -> str:
         project = gl.projects.get(project_id)
         mrs = project.mergerequests.list(state="opened", per_page=50, order_by="updated_at")
@@ -201,6 +202,7 @@ def create_merge_request_note(
 
     Returns JSON: {note_id, web_url} of the created note.
     """
+
     # Note: posting requires a valid token — no anonymous fallback can help here,
     # but _with_client keeps the error message consistent with the other tools.
     def _q(gl: gitlab.Gitlab) -> str:

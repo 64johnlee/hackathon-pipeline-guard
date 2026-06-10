@@ -20,6 +20,7 @@ Deploy to Google Cloud Agent Builder:
     # Query the deployed engine:
     remote_app.query(project="myorg/myrepo")
 """
+
 from __future__ import annotations
 
 import asyncio

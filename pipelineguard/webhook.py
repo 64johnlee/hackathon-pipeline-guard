@@ -1,4 +1,5 @@
 """GitLab webhook receiver — auto-diagnoses pipeline failures."""
+
 from __future__ import annotations
 
 import hmac
@@ -364,7 +365,7 @@ async def handle_pipeline_event(
     if kind != "pipeline":
         return {"status": "ignored", "reason": f"event kind={kind!r}"}
 
-    attrs = (payload.get("object_attributes") or {})
+    attrs = payload.get("object_attributes") or {}
     status = attrs.get("status", "")
     if status != "failed":
         return {"status": "ignored", "reason": f"pipeline status={status!r}"}
@@ -475,7 +476,9 @@ def make_app(
                 if cl is not None:
                     try:
                         if int(cl) > MAX_WEBHOOK_BODY_BYTES:
-                            resp = JSONResponse({"detail": "request body too large"}, status_code=413)
+                            resp = JSONResponse(
+                                {"detail": "request body too large"}, status_code=413
+                            )
                             await resp(scope, receive, send)
                             return
                     except ValueError:
@@ -496,9 +499,7 @@ def make_app(
                 if request.url.path == "/webhook/gitlab" and request.method == "POST":
                     token_header = request.headers.get("X-Gitlab-Token", "")
                     if not hmac.compare_digest(webhook_secret.encode(), token_header.encode()):
-                        return JSONResponse(
-                            {"detail": "Invalid webhook token"}, status_code=401
-                        )
+                        return JSONResponse({"detail": "Invalid webhook token"}, status_code=401)
                 return await call_next(request)
 
         app.add_middleware(GitLabTokenMiddleware)
@@ -807,9 +808,7 @@ def make_app(
 
         # Translate diagnostic errors to 500 so GitLab retries the delivery.
         if result.get("status") == "error":
-            raise HTTPException(
-                status_code=500, detail=result.get("reason", "Diagnosis failed")
-            )
+            raise HTTPException(status_code=500, detail=result.get("reason", "Diagnosis failed"))
 
         return result
 
@@ -833,7 +832,9 @@ def make_app(
             try:
                 pipeline_id = int(pipeline_id_raw)
             except (ValueError, TypeError):
-                raise HTTPException(status_code=422, detail="pipeline_id must be an integer") from None
+                raise HTTPException(
+                    status_code=422, detail="pipeline_id must be an integer"
+                ) from None
         try:
             report = await agent.diagnose(
                 project=project,
@@ -842,7 +843,9 @@ def make_app(
             )
             return {
                 "root_cause": report.root_cause,
-                "failure_category": report.failure_category.value if report.failure_category else "unknown",
+                "failure_category": report.failure_category.value
+                if report.failure_category
+                else "unknown",
                 "is_flaky": report.is_flaky,
                 "affected_jobs": report.affected_jobs,
                 "fix_proposals": [
@@ -874,9 +877,9 @@ def make_app(
         On approve: re-diagnoses with post_comment=True → fix posted to GitLab MR.
         On reject: returns {"status": "rejected"} immediately.
         """
-        case_id         = str(body.get("case_id", ""))
-        action          = str(body.get("action", "")).lower()
-        project         = str(body.get("project", ""))
+        case_id = str(body.get("case_id", ""))
+        action = str(body.get("action", "")).lower()
+        project = str(body.get("project", ""))
         pipeline_id_raw = body.get("pipeline_id")
 
         if action not in ("approve", "reject"):
@@ -898,7 +901,9 @@ def make_app(
 
         logger.info(
             "[UiPath] Fix approved — case=%s project=%s pipeline=%s — posting comment",
-            case_id, project, pipeline_id,
+            case_id,
+            project,
+            pipeline_id,
         )
         try:
             report = await agent.diagnose(

@@ -15,6 +15,7 @@ If the server is unreachable or authentication fails the backend degrades
 gracefully to an empty tool set — the custom pipeline MCP still handles
 full diagnosis without interruption.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -146,8 +147,7 @@ class GitLabOfficialMCPBackend:
         async def _call(tool_name: str) -> str:
             result = await self._session.call_tool(tool_name, arguments)  # type: ignore[union-attr]
             parts: list[str] = [
-                item.text if hasattr(item, "text") else str(item)
-                for item in result.content
+                item.text if hasattr(item, "text") else str(item) for item in result.content
             ]
             return "\n".join(parts)
 
@@ -156,7 +156,7 @@ class GitLabOfficialMCPBackend:
         except Exception as first_exc:
             # Retry with prefix stripped in case the server expects the bare name.
             if name.startswith(TOOL_PREFIX):
-                bare_name = name[len(TOOL_PREFIX):]
+                bare_name = name[len(TOOL_PREFIX) :]
                 try:
                     return await _call(bare_name)
                 except Exception:

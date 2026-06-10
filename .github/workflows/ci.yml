@@ -27,6 +27,9 @@ jobs:
       - name: Lint (ruff)
         run: python -m ruff check .
 
+      - name: Format check (ruff)
+        run: python -m ruff format --check .
+
       - name: Syntax / import check
         run: python -m compileall -q pipelineguard
 

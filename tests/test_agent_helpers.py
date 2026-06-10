@@ -1,4 +1,5 @@
 """Tests for agent comment-formatting helpers (_md_inline, _fenced_diff, _format_comment)."""
+
 from __future__ import annotations
 
 

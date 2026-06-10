@@ -1,4 +1,5 @@
 """Core PipelineGuard agent — orchestrates Gemini + GitLab backends."""
+
 from __future__ import annotations
 
 import json
@@ -109,9 +110,7 @@ class PipelineGuardAgent:
             GitLabOfficialMCPBackend(self._gitlab_token, self._gitlab_url) as official_backend,
         ):
             if official_backend.connected:
-                console.print(
-                    "  [dim green]✓ Official GitLab MCP server connected[/]"
-                )
+                console.print("  [dim green]✓ Official GitLab MCP server connected[/]")
             else:
                 console.print(
                     "  [dim yellow]⚠ Official GitLab MCP server unavailable"
@@ -160,7 +159,9 @@ class PipelineGuardAgent:
             task_id = progress.add_task("Thinking…", total=None)
 
             for iteration in range(1, _MAX_TOOL_ITERATIONS + 1):
-                progress.update(task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…")
+                progress.update(
+                    task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…"
+                )
 
                 response = await self._generate_with_retry(
                     model=_GEMINI_MODEL,
@@ -180,15 +181,9 @@ class PipelineGuardAgent:
                 messages.append(candidate.content)
 
                 tool_calls = [
-                    p.function_call
-                    for p in (candidate.content.parts or [])
-                    if p.function_call
+                    p.function_call for p in (candidate.content.parts or []) if p.function_call
                 ]
-                text_parts = [
-                    p.text
-                    for p in (candidate.content.parts or [])
-                    if p.text
-                ]
+                text_parts = [p.text for p in (candidate.content.parts or []) if p.text]
 
                 if text_parts:
                     final_text = "\n".join(text_parts)
@@ -265,6 +260,7 @@ class PipelineGuardAgent:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _fmt_args(args: dict[str, Any]) -> str:
     s = json.dumps(args, default=str)
@@ -445,7 +441,9 @@ def _format_comment(report: DiagnosisReport) -> str:
         f"**Affected jobs:** {affected}",
     ]
     if report.is_flaky:
-        lines.append("\n> This failure appears **flaky** — consider retrying before applying a fix.")
+        lines.append(
+            "\n> This failure appears **flaky** — consider retrying before applying a fix."
+        )
     if report.fix_proposals:
         lines.append("\n### Proposed fixes")
         for i, fix in enumerate(report.fix_proposals, 1):

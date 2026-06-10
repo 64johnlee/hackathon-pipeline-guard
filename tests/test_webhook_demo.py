@@ -1,4 +1,5 @@
 """Tests for the /demo endpoints (GET + POST) and landing page integrity."""
+
 from __future__ import annotations
 
 import re

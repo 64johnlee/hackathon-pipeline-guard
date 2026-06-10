@@ -1,4 +1,5 @@
 """Data models for PipelineGuard diagnosis results."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

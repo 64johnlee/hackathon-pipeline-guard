@@ -1,4 +1,5 @@
 """Splunk MCP backend — connects to the Splunk MCP Server via HTTP/SSE."""
+
 from __future__ import annotations
 
 import logging
@@ -11,6 +12,7 @@ try:
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
     from mcp.types import Tool as MCPTool
+
     _MCP_AVAILABLE = True
 except ImportError:
     _MCP_AVAILABLE = False
@@ -67,9 +69,7 @@ class SplunkMCPBackend:
 
     async def __aenter__(self) -> SplunkMCPBackend:
         if not _MCP_AVAILABLE:
-            raise RuntimeError(
-                "The 'mcp' Python package is not installed. Run: pip install mcp"
-            )
+            raise RuntimeError("The 'mcp' Python package is not installed. Run: pip install mcp")
 
         headers = {
             "Authorization": f"Splunk {self._splunk_token}",
@@ -137,6 +137,7 @@ class SplunkMCPBackend:
 # ---------------------------------------------------------------------------
 # Schema conversion helpers (identical logic to GitLab MCPBackend)
 # ---------------------------------------------------------------------------
+
 
 def _mcp_to_gemini_declaration(tool: MCPTool) -> types.FunctionDeclaration:
     schema = tool.inputSchema or {}

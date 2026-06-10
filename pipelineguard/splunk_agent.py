@@ -1,4 +1,5 @@
 """SplunkGuard agent — orchestrates Gemini + Splunk MCP/direct backends."""
+
 from __future__ import annotations
 
 import json
@@ -28,6 +29,7 @@ _MAX_TOOL_ITERATIONS = 15
 # Result model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SplunkInvestigationReport:
     question: str
@@ -43,6 +45,7 @@ class SplunkInvestigationReport:
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class SplunkGuardAgent:
     """
@@ -128,7 +131,9 @@ class SplunkGuardAgent:
             task_id = progress.add_task("Thinking…", total=None)
 
             for iteration in range(1, _MAX_TOOL_ITERATIONS + 1):
-                progress.update(task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…")
+                progress.update(
+                    task_id, description=f"Iteration {iteration}/{_MAX_TOOL_ITERATIONS}…"
+                )
 
                 response = await self._genai.aio.models.generate_content(
                     model=_GEMINI_MODEL,
@@ -148,15 +153,9 @@ class SplunkGuardAgent:
                 messages.append(candidate.content)
 
                 tool_calls = [
-                    p.function_call
-                    for p in (candidate.content.parts or [])
-                    if p.function_call
+                    p.function_call for p in (candidate.content.parts or []) if p.function_call
                 ]
-                text_parts = [
-                    p.text
-                    for p in (candidate.content.parts or [])
-                    if p.text
-                ]
+                text_parts = [p.text for p in (candidate.content.parts or []) if p.text]
 
                 if text_parts:
                     final_text = "\n".join(text_parts)
@@ -235,6 +234,7 @@ class SplunkGuardAgent:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fmt_args(args: dict[str, Any]) -> str:
     s = json.dumps(args, default=str)

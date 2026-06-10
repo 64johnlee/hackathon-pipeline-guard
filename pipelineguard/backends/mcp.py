@@ -1,4 +1,5 @@
 """MCP backend — spawns the bundled PipelineGuard MCP server as a stdio subprocess."""
+
 from __future__ import annotations
 
 import contextlib
@@ -13,6 +14,7 @@ try:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from mcp.types import Tool as MCPTool
+
     _MCP_AVAILABLE = True
 except ImportError:
     _MCP_AVAILABLE = False
@@ -101,6 +103,7 @@ class MCPBackend:
 # ---------------------------------------------------------------------------
 # Schema conversion helpers
 # ---------------------------------------------------------------------------
+
 
 def _mcp_to_gemini_declaration(tool: MCPTool) -> types.FunctionDeclaration:
     schema = tool.inputSchema or {}
