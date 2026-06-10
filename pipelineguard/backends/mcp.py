@@ -1,6 +1,7 @@
 """MCP backend — spawns the bundled PipelineGuard MCP server as a stdio subprocess."""
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -68,15 +69,11 @@ class MCPBackend:
 
     async def __aexit__(self, *exc_info: Any) -> None:
         if self._session:
-            try:
+            with contextlib.suppress(BaseException):
                 await self._session.__aexit__(*exc_info)
-            except BaseException:
-                pass
         if self._stdio_cm:
-            try:
+            with contextlib.suppress(BaseException):
                 await self._stdio_cm.__aexit__(*exc_info)
-            except BaseException:
-                pass
 
     async def list_tools_as_gemini(self) -> list[types.Tool]:
         """Return the MCP server's tool list converted to Gemini Tool objects."""

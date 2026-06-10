@@ -107,6 +107,13 @@ def test_landing_page_script_has_no_broken_escapes(client):
     assert "loadPreset" in script
 
 
+def test_pricing_page_renders_without_doubled_braces(client):
+    resp = client.get("/pricing")
+    assert resp.status_code == 200
+    assert "{{" not in resp.text and "}}" not in resp.text
+    assert "function subscribe" in resp.text
+
+
 def test_webhook_ignores_non_pipeline_events(client):
     resp = client.post("/webhook/gitlab", json={"object_kind": "push"})
     assert resp.status_code == 200

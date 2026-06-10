@@ -103,41 +103,43 @@ class PipelineGuardAgent:
         pipeline_id: int | None,
         post_comment: bool,
     ) -> DiagnosisReport:
-        async with MCPBackend(self._gitlab_token, self._gitlab_url) as pipeline_backend:
-            async with GitLabOfficialMCPBackend(self._gitlab_token, self._gitlab_url) as official_backend:
-                if official_backend.connected:
-                    console.print(
-                        "  [dim green]✓ Official GitLab MCP server connected[/]"
-                    )
-                else:
-                    console.print(
-                        "  [dim yellow]⚠ Official GitLab MCP server unavailable"
-                        " — using pipeline MCP only[/]"
-                    )
-
-                # Merge tools: pipeline-specific tools first so Gemini
-                # prefers them for diagnosis; official tools provide context.
-                pipeline_tools = await pipeline_backend.list_tools_as_gemini()
-                official_tools = await official_backend.list_tools_as_gemini()
-
-                all_declarations = []
-                for tool_obj in pipeline_tools + official_tools:
-                    all_declarations.extend(tool_obj.function_declarations or [])
-                # Guard: an empty function_declarations list causes a Gemini API error.
-                # This should not occur (bundled MCP always starts), but be safe.
-                merged_tools = (
-                    [types.Tool(function_declarations=all_declarations)]
-                    if all_declarations
-                    else pipeline_tools  # last-resort fallback to pipeline-only tools
+        async with (
+            MCPBackend(self._gitlab_token, self._gitlab_url) as pipeline_backend,
+            GitLabOfficialMCPBackend(self._gitlab_token, self._gitlab_url) as official_backend,
+        ):
+            if official_backend.connected:
+                console.print(
+                    "  [dim green]✓ Official GitLab MCP server connected[/]"
+                )
+            else:
+                console.print(
+                    "  [dim yellow]⚠ Official GitLab MCP server unavailable"
+                    " — using pipeline MCP only[/]"
                 )
 
-                prompt = build_analysis_prompt(project=project, pipeline_id=pipeline_id)
-                messages: list[types.Content] = [
-                    types.Content(role="user", parts=[types.Part(text=prompt)])
-                ]
-                final_text = await self._run_tool_loop(
-                    pipeline_backend, official_backend, merged_tools, messages
-                )
+            # Merge tools: pipeline-specific tools first so Gemini
+            # prefers them for diagnosis; official tools provide context.
+            pipeline_tools = await pipeline_backend.list_tools_as_gemini()
+            official_tools = await official_backend.list_tools_as_gemini()
+
+            all_declarations = []
+            for tool_obj in pipeline_tools + official_tools:
+                all_declarations.extend(tool_obj.function_declarations or [])
+            # Guard: an empty function_declarations list causes a Gemini API error.
+            # This should not occur (bundled MCP always starts), but be safe.
+            merged_tools = (
+                [types.Tool(function_declarations=all_declarations)]
+                if all_declarations
+                else pipeline_tools  # last-resort fallback to pipeline-only tools
+            )
+
+            prompt = build_analysis_prompt(project=project, pipeline_id=pipeline_id)
+            messages: list[types.Content] = [
+                types.Content(role="user", parts=[types.Part(text=prompt)])
+            ]
+            final_text = await self._run_tool_loop(
+                pipeline_backend, official_backend, merged_tools, messages
+            )
         return _parse_report(final_text, project, pipeline_id)
 
     async def _run_tool_loop(

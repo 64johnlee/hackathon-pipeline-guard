@@ -65,14 +65,16 @@ class GitLabOfficialMCPBackend:
         # mid-task (the previous approach) corrupted the caller's cancel
         # scope stack and cancelled unrelated in-flight requests.
         try:
-            async with streamablehttp_client(self._mcp_url, headers=self._headers) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self._session = session
-                    self.connected = True
-                    logger.info("Official GitLab MCP server connected (%s)", self._mcp_url)
-                    self._ready.set()
-                    await self._closing.wait()
+            async with (
+                streamablehttp_client(self._mcp_url, headers=self._headers) as (read, write, _),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                self._session = session
+                self.connected = True
+                logger.info("Official GitLab MCP server connected (%s)", self._mcp_url)
+                self._ready.set()
+                await self._closing.wait()
         except asyncio.CancelledError:
             pass  # cancelled by __aenter__ timeout or __aexit__ — expected
         except BaseException as exc:
