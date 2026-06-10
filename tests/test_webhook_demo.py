@@ -199,7 +199,6 @@ def test_uipath_callback_approve_posts_fix(client):
 
 def test_uipath_callback_reject_skips_diagnose(client):
     body = {"case_id": "C-2", "action": "reject", "project": "org/repo"}
-    before = len(StubAgent.last_instance.calls) if hasattr(StubAgent, "last_instance") else 0
     resp = client.post("/api/uipath/callback", json=body)
     assert resp.status_code == 200
     data = resp.json()
