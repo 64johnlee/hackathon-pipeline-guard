@@ -38,7 +38,7 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B", "SIM"]
+select = ["E", "F", "W", "B", "SIM", "UP"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
