@@ -49,7 +49,7 @@ PRICING_TIERS = {
 
 def generate_pricing_html() -> str:
     """Generate HTML for the pricing page with Stripe integration."""
-    return f"""<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
