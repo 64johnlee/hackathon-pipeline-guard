@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HumanReview.xaml
+  ----------------
+  Creates an Action Center task for engineer review of the AI diagnosis.
+  Polls every 30 s until the engineer clicks "Approve Fix" or "Reject Fix"
+  (max 4 hours = 480 polls).  Called by Main.xaml Step 4.
+
+  Task data shown to engineer:
+    Title       "Review AI fix for <project> (case <caseId>)"
+    Description root_cause + fix diff + case ID
+    Actions     ["Approve Fix", "Reject Fix"]
+
+  In:  in_caseId / in_project / in_diagnosisJson
+       in_orchestratorUrl / in_token / in_folderPath
+  Out: out_isApproved (Boolean)
+-->
+<Activity mc:Ignorable="sap2010 sads sann"
+          x:Class="PipelineGuardMaestro.HumanReview"
+          xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+          xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+          xmlns:s="clr-namespace:System;assembly=mscorlib"
+          xmlns:sads="http://schemas.microsoft.com/netfx/2010/xaml/activities/debugger"
+          xmlns:sann="http://schemas.uipath.com/workflow/annotations"
+          xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+          xmlns:ui="http://schemas.uipath.com/workflow/activities"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Activity.Properties>
+    <Property Name="in_caseId"          Type="InArgument(x:String)"  />
+    <Property Name="in_project"         Type="InArgument(x:String)"  />
+    <Property Name="in_diagnosisJson"   Type="InArgument(x:String)"  />
+    <Property Name="in_orchestratorUrl" Type="InArgument(x:String)"  />
+    <Property Name="in_token"           Type="InArgument(x:String)"  />
+    <Property Name="in_folderPath"      Type="InArgument(x:String)"  />
+    <Property Name="out_isApproved"     Type="OutArgument(x:Boolean)" />
+  </Activity.Properties>
+
+  <Sequence DisplayName="Human Review via Action Center">
+
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String"  Name="taskTitle"    />
+      <Variable x:TypeArguments="x:String"  Name="taskBody"     />
+      <Variable x:TypeArguments="x:String"  Name="requestBody"  />
+      <Variable x:TypeArguments="x:String"  Name="responseBody" />
+      <Variable x:TypeArguments="x:Int32"   Name="statusCode"   />
+      <Variable x:TypeArguments="x:String"  Name="taskId"       />
+      <Variable x:TypeArguments="x:String"  Name="taskStatus"   Default="[&quot;Pending&quot;]" />
+      <Variable x:TypeArguments="x:String"  Name="taskAction"   Default="[&quot;&quot;]" />
+      <Variable x:TypeArguments="x:Int32"   Name="pollCount"    Default="[0]" />
+      <Variable x:TypeArguments="x:Boolean" Name="taskDone"     Default="[False]" />
+      <Variable x:TypeArguments="x:String"  Name="rootCause"    />
+      <Variable x:TypeArguments="x:String"  Name="fixDiff"      />
+    </Sequence.Variables>
+
+    <ui:InvokeCode Language="VB" DisplayName="Extract root_cause + fix diff">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diag">[in_diagnosisJson]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_rc">[rootCause]</OutArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_diff">[fixDiff]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim diag = Newtonsoft.Json.Linq.JObject.Parse(in_diag)
+        out_rc = If(diag("root_cause") IsNot Nothing, diag("root_cause").ToString(), "unknown")
+        Dim fps = diag("fix_proposals")
+        If fps IsNot Nothing AndAlso fps.HasValues Then
+          out_diff = If(fps(0)("diff") IsNot Nothing, fps(0)("diff").ToString(), "(no diff)")
+        Else
+          out_diff = "(no fix proposed)"
+        End If
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <Assign DisplayName="Build task title">
+      <Assign.To><OutArgument x:TypeArguments="x:String">[taskTitle]</OutArgument></Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:String">
+          ["Review AI fix for " &amp; in_project &amp; " (case " &amp; in_caseId &amp; ")"]
+        </InArgument>
+      </Assign.Value>
+    </Assign>
+
+    <ui:InvokeCode Language="VB" DisplayName="Build task description">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_proj">[in_project]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_rc">[rootCause]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diff">[fixDiff]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_cid">[in_caseId]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_body">[taskBody]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        out_body = "PipelineGuard AI detected a CI failure in " &amp; in_proj &amp; "." &amp; Chr(10) &amp;
+                   Chr(10) &amp; "ROOT CAUSE:" &amp; Chr(10) &amp; in_rc &amp; Chr(10) &amp;
+                   Chr(10) &amp; "PROPOSED FIX (unified diff):" &amp; Chr(10) &amp; in_diff &amp; Chr(10) &amp;
+                   Chr(10) &amp; "Case ID: " &amp; in_cid &amp; Chr(10) &amp;
+                   "Click Approve Fix to post this diff as a GitLab MR comment, or Reject Fix to close without action."
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <ui:InvokeCode Language="VB" DisplayName="Build task request body">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_title">[taskTitle]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_desc">[taskBody]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_req">[requestBody]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim esc As Func(Of String, String) = Function(s) s.Replace("\", "\\").Replace("""", "\""").Replace(Chr(10), "\n").Replace(Chr(13), "")
+        out_req = "{" &amp;
+          """Title"":"  &amp; """" &amp; esc(in_title) &amp; """," &amp;
+          """Type"":""FormTask""," &amp;
+          """Priority"":""High""," &amp;
+          """Data"":{" &amp;
+            """Description"":"   &amp; """" &amp; esc(in_desc)              &amp; """," &amp;
+            """Actions"":[""Approve Fix"",""Reject Fix""]" &amp;
+          "}" &amp;
+        "}"
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <ui:HTTPRequest DisplayName="POST /tasks (create Action Center review task)"
+                    EndPoint="[in_orchestratorUrl.TrimEnd(&quot;/&quot;c) &amp; &quot;/tasks&quot;]"
+                    Method="POST"
+                    Body="[requestBody]"
+                    Response="[responseBody]"
+                    ResponseStatusCode="[statusCode]">
+      <ui:HTTPRequest.Headers>
+        <x:Array Type="ui:HttpHeader">
+          <ui:HttpHeader Key="Content-Type"  Value="application/json" />
+          <ui:HttpHeader Key="Accept"        Value="application/json" />
+          <ui:HttpHeader Key="Authorization" Value="[&quot;Bearer &quot; &amp; in_token]" />
+          <ui:HttpHeader Key="X-UIPATH-OrganizationUnitId" Value="[in_folderPath]" />
+        </x:Array>
+      </ui:HTTPRequest.Headers>
+    </ui:HTTPRequest>
+
+    <ui:InvokeCode Language="VB" DisplayName="Extract task ID">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_resp">[responseBody]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_tid">[taskId]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim resp = Newtonsoft.Json.Linq.JObject.Parse(in_resp)
+        out_tid = If(resp("Id") IsNot Nothing, resp("Id").ToString(),
+                  If(resp("id") IsNot Nothing, resp("id").ToString(), "unknown"))
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <ui:LogMessage Level="Information"
+                   DisplayName="Log: awaiting engineer decision"
+                   Message="[&quot;[PipelineGuard] Waiting for engineer review — task: &quot; &amp; taskId]" />
+
+    <!-- Poll every 30 s, max 480 times = 4 hours -->
+    <While DisplayName="Poll until engineer decides (max 4 h)" Condition="[Not taskDone AndAlso pollCount &lt; 480]">
+      <Sequence>
+        <ui:Delay DisplayName="Wait 30 s">
+          <ui:Delay.Duration>
+            <InArgument x:TypeArguments="s:TimeSpan">
+              <s:TimeSpan>00:00:30</s:TimeSpan>
+            </InArgument>
+          </ui:Delay.Duration>
+        </ui:Delay>
+
+        <ui:HTTPRequest DisplayName="GET /tasks/{taskId}"
+                        EndPoint="[in_orchestratorUrl.TrimEnd(&quot;/&quot;c) &amp; &quot;/tasks/&quot; &amp; taskId]"
+                        Method="GET"
+                        Response="[responseBody]"
+                        ResponseStatusCode="[statusCode]">
+          <ui:HTTPRequest.Headers>
+            <x:Array Type="ui:HttpHeader">
+              <ui:HttpHeader Key="Accept"        Value="application/json" />
+              <ui:HttpHeader Key="Authorization" Value="[&quot;Bearer &quot; &amp; in_token]" />
+              <ui:HttpHeader Key="X-UIPATH-OrganizationUnitId" Value="[in_folderPath]" />
+            </x:Array>
+          </ui:HTTPRequest.Headers>
+        </ui:HTTPRequest>
+
+        <ui:InvokeCode Language="VB" DisplayName="Parse status + action">
+          <ui:InvokeCode.Parameters>
+            <InArgument  x:TypeArguments="x:String"  x:Key="in_resp">[responseBody]</InArgument>
+            <OutArgument x:TypeArguments="x:String"  x:Key="out_status">[taskStatus]</OutArgument>
+            <OutArgument x:TypeArguments="x:String"  x:Key="out_action">[taskAction]</OutArgument>
+            <OutArgument x:TypeArguments="x:Boolean" x:Key="out_done">[taskDone]</OutArgument>
+          </ui:InvokeCode.Parameters>
+          <ui:InvokeCode.Code>
+            Dim resp = Newtonsoft.Json.Linq.JObject.Parse(in_resp)
+            out_status = If(resp("Status") IsNot Nothing, resp("Status").ToString(), "Pending")
+            out_action = If(resp("Action") IsNot Nothing, resp("Action").ToString(), "")
+            out_done   = (out_status = "Completed" OrElse out_status = "Cancelled")
+          </ui:InvokeCode.Code>
+        </ui:InvokeCode>
+
+        <Assign DisplayName="Increment poll counter">
+          <Assign.To><OutArgument x:TypeArguments="x:Int32">[pollCount]</OutArgument></Assign.To>
+          <Assign.Value><InArgument x:TypeArguments="x:Int32">[pollCount + 1]</InArgument></Assign.Value>
+        </Assign>
+      </Sequence>
+    </While>
+
+    <Assign DisplayName="Set out_isApproved">
+      <Assign.To><OutArgument x:TypeArguments="x:Boolean">[out_isApproved]</OutArgument></Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:Boolean">[taskAction.ToLower().Contains("approve")]</InArgument>
+      </Assign.Value>
+    </Assign>
+
+    <ui:LogMessage Level="Information"
+                   DisplayName="Log: review outcome"
+                   Message="[&quot;[PipelineGuard] Review done — approved: &quot; &amp; out_isApproved.ToString() &amp; &quot;  action: '&quot; &amp; taskAction &amp; &quot;'&quot;]" />
+
+  </Sequence>
+</Activity>

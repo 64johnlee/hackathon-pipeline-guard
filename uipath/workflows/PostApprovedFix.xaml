@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PostApprovedFix.xaml
+  --------------------
+  Called by Main.xaml Step 5 (approved branch).
+  POSTs {"case_id","action":"approve","project","pipeline_id","fix_diff"} to
+  PipelineGuard's /api/uipath/callback, which posts the fix diff as a GitLab MR comment.
+
+  In:  in_project / in_pipelineId / in_diagnosisJson / in_apiBaseUrl / in_caseId
+  Out: out_result (String) — "fix_posted" on success, "callback_error_http_NNN" on failure
+-->
+<Activity mc:Ignorable="sap2010 sads sann"
+          x:Class="PipelineGuardMaestro.PostApprovedFix"
+          xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+          xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+          xmlns:sads="http://schemas.microsoft.com/netfx/2010/xaml/activities/debugger"
+          xmlns:sann="http://schemas.uipath.com/workflow/annotations"
+          xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+          xmlns:ui="http://schemas.uipath.com/workflow/activities"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Activity.Properties>
+    <Property Name="in_project"       Type="InArgument(x:String)" />
+    <Property Name="in_pipelineId"    Type="InArgument(x:String)" />
+    <Property Name="in_diagnosisJson" Type="InArgument(x:String)" />
+    <Property Name="in_apiBaseUrl"    Type="InArgument(x:String)" />
+    <Property Name="in_caseId"        Type="InArgument(x:String)" />
+    <Property Name="out_result"       Type="OutArgument(x:String)" />
+  </Activity.Properties>
+
+  <Sequence DisplayName="POST approved fix via /api/uipath/callback">
+
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Name="fixDiff"      />
+      <Variable x:TypeArguments="x:String" Name="requestBody"  />
+      <Variable x:TypeArguments="x:String" Name="responseBody" />
+      <Variable x:TypeArguments="x:Int32"  Name="statusCode"   />
+      <Variable x:TypeArguments="x:String" Name="endpoint"     />
+    </Sequence.Variables>
+
+    <ui:InvokeCode Language="VB" DisplayName="Extract first fix diff">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diag">[in_diagnosisJson]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_diff">[fixDiff]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim diag = Newtonsoft.Json.Linq.JObject.Parse(in_diag)
+        Dim fps  = diag("fix_proposals")
+        out_diff = If(fps IsNot Nothing AndAlso fps.HasValues AndAlso fps(0)("diff") IsNot Nothing,
+                      fps(0)("diff").ToString(), "")
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <ui:InvokeCode Language="VB" DisplayName="Build callback request body">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_proj">[in_project]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_pid">[in_pipelineId]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diff">[fixDiff]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_cid">[in_caseId]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_body">[requestBody]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim esc As Func(Of String, String) = Function(s) s.Replace("\", "\\").Replace("""", "\""").Replace(Chr(10), "\n").Replace(Chr(13), "")
+        out_body = "{" &amp;
+          """case_id"":"     &amp; """" &amp; esc(in_cid)  &amp; """," &amp;
+          """action"":""approve""," &amp;
+          """project"":"    &amp; """" &amp; esc(in_proj) &amp; """," &amp;
+          """pipeline_id"":" &amp; in_pid &amp; "," &amp;
+          """fix_diff"":"   &amp; """" &amp; esc(in_diff) &amp; """" &amp;
+        "}"
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <Assign DisplayName="Build callback endpoint">
+      <Assign.To><OutArgument x:TypeArguments="x:String">[endpoint]</OutArgument></Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:String">
+          [in_apiBaseUrl.TrimEnd("/"c) &amp; "/api/uipath/callback"]
+        </InArgument>
+      </Assign.Value>
+    </Assign>
+
+    <ui:HTTPRequest DisplayName="POST /api/uipath/callback"
+                    EndPoint="[endpoint]"
+                    Method="POST"
+                    Body="[requestBody]"
+                    Response="[responseBody]"
+                    ResponseStatusCode="[statusCode]">
+      <ui:HTTPRequest.Headers>
+        <x:Array Type="ui:HttpHeader">
+          <ui:HttpHeader Key="Content-Type" Value="application/json" />
+          <ui:HttpHeader Key="Accept"       Value="application/json" />
+        </x:Array>
+      </ui:HTTPRequest.Headers>
+    </ui:HTTPRequest>
+
+    <If DisplayName="Check 2xx" Condition="[statusCode &lt; 200 OrElse statusCode &gt;= 300]">
+      <If.Then>
+        <Assign DisplayName="Set error result">
+          <Assign.To><OutArgument x:TypeArguments="x:String">[out_result]</OutArgument></Assign.To>
+          <Assign.Value>
+            <InArgument x:TypeArguments="x:String">["callback_error_http_" &amp; statusCode.ToString()]</InArgument>
+          </Assign.Value>
+        </Assign>
+      </If.Then>
+      <If.Else>
+        <ui:InvokeCode Language="VB" DisplayName="Extract result status from response">
+          <ui:InvokeCode.Parameters>
+            <InArgument  x:TypeArguments="x:String" x:Key="in_resp">[responseBody]</InArgument>
+            <OutArgument x:TypeArguments="x:String" x:Key="out_res">[out_result]</OutArgument>
+          </ui:InvokeCode.Parameters>
+          <ui:InvokeCode.Code>
+            Dim resp = Newtonsoft.Json.Linq.JObject.Parse(in_resp)
+            out_res = If(resp("status") IsNot Nothing, resp("status").ToString(), "ok")
+          </ui:InvokeCode.Code>
+        </ui:InvokeCode>
+      </If.Else>
+    </If>
+
+    <ui:LogMessage Level="Information"
+                   DisplayName="Log: callback result"
+                   Message="[&quot;[PipelineGuard] /api/uipath/callback → &quot; &amp; out_result]" />
+
+  </Sequence>
+</Activity>

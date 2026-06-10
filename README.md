@@ -22,7 +22,7 @@ PipelineGuard watches your GitLab CI pipelines. When one fails, it:
 
 Verified end-to-end against a real failed `gitlab-org/cli` pipeline: **~46 seconds, 2 tool calls, correct root cause identified** (config error: malformed git ref). The agentic loop terminates well under its 15-iteration safety cap.
 
-Built for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.com) — GitLab track.
+Built for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.com) — GitLab track and the [UiPath AgentHack 2026](https://uipath-agenthack.devpost.com) — Maestro Case track.
 
 > **Try it against your pipeline →** `curl "https://pipeline-guard-fpgq3ij7ya-uc.a.run.app/demo?project=YOUR_ORG/YOUR_REPO"` or open the [live demo](https://pipeline-guard-fpgq3ij7ya-uc.a.run.app/demo) in your browser — no install, no auth required for public repos.
 
@@ -297,12 +297,62 @@ diff:
 
 ---
 
+## UiPath Maestro Integration
+
+PipelineGuard integrates with **UiPath Automation Cloud** for the [UiPath AgentHack 2026](https://uipath-agenthack.devpost.com) — Maestro Case track.
+
+Every pipeline failure becomes a **Maestro Case** with a full audit lifecycle:
+
+```
+GitLab failure → UiPath Orchestrator trigger → Main.xaml
+  ├─ DiagnoseWithAI.xaml  → POST /api/diagnose       (Gemini 2.5 Flash)
+  ├─ CreateMaestroCase.xaml → Orchestrator /odata/Cases
+  ├─ HumanReview.xaml     → Action Center task (engineer approves/rejects)
+  └─ PostApprovedFix.xaml → POST /api/uipath/callback → GitLab MR comment
+```
+
+**Setup**: see [`uipath/SETUP.md`](./uipath/SETUP.md) — takes ~20 minutes on free-tier Automation Cloud.
+
+**New API endpoints** (for UiPath workflows):
+- `POST /api/diagnose` — structured diagnosis, called by `DiagnoseWithAI.xaml`
+- `POST /api/uipath/callback` — called by `PostApprovedFix.xaml` on engineer approval
+
+---
+
+## Built with Claude Code
+
+This project was developed using **[Claude Code](https://claude.ai/code)** (Anthropic's AI coding CLI) throughout the entire development cycle, qualifying for the **+2 bonus points** in the UiPath AgentHack judging rubric.
+
+**How Claude Code was used:**
+
+| Task | Claude Code contribution |
+|---|---|
+| UiPath XAML workflows | Generated all 5 `.xaml` files with correct WF activity bindings |
+| Python endpoint design | Designed and implemented `/api/diagnose` + `/api/uipath/callback` |
+| Dual-MCP architecture | Designed the `gl_*` prefix routing between official + bundled MCP servers |
+| Presentation deck | Drafted all 12 slides with benchmarks and judge-targeted framing |
+| SETUP guide | Wrote step-by-step Automation Cloud configuration walkthrough |
+| Devpost submission copy | Wrote all submission sections (inspiration, tech, accomplishments) |
+| Debugging | Diagnosed and fixed MCP transport errors, Gemini structured-output quirks |
+| Demo scenario library | Implemented 5 realistic canned scenarios for the `/demo` endpoint |
+
+**Evidence**: this repository's entire `uipath/` directory and the `presentation/` directory were created in a single Claude Code session. The session transcript is preserved at:
+`~/.claude/projects/-mnt-c-WINDOWS-system32/464ad3d7-b05e-486b-bb90-ce098f44e565.jsonl`
+
+**Bonus point documentation** (per judging rubric):
+> "2 points: Clear documentation with verifiable evidence (prompts, screenshots, README section)"
+
+This section, the commit history on `feat/uipath-maestro-integration`, and the session file above constitute that verifiable evidence.
+
+---
+
 ## Tech Stack
 
 | Component | Library |
 |---|---|
 | LLM | Gemini 2.5 Flash via `google-genai` (AI Studio or Vertex AI) |
 | Cloud deployment | Cloud Run + Artifact Registry; Vertex AI Agent Engine for hosted agent |
+| UiPath integration | Studio Web + Maestro Case + Action Center + Orchestrator REST |
 | MCP server | `pipelineguard.mcp_server` (bundled, FastMCP / Python SDK) |
 | MCP client | `mcp` (official Python SDK) |
 | GitLab API | `python-gitlab` (used by both MCP server and `--direct` fallback) |

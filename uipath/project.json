@@ -1,0 +1,24 @@
+{
+  "name": "PipelineGuardMaestro",
+  "description": "DevOps Incident Management — UiPath Maestro Case + Gemini AI diagnosis of GitLab CI failures",
+  "projectId": "pipeline-guard-maestro-001",
+  "main": "Main.xaml",
+  "dependencies": {
+    "UiPath.System.Activities": "[24.10.*, *)",
+    "UiPath.WebAPI.Activities": "[1.14.*, *)",
+    "UiPath.Persistence.Activities": "[1.5.*, *)"
+  },
+  "schemaVersion": "4.0",
+  "studioVersion": "24.10.0",
+  "projectVersion": "1.0.0",
+  "runtimeOptions": {
+    "autoDispose": false,
+    "isPausable": true,
+    "requiresUserInteraction": false,
+    "supportsPersistence": true
+  },
+  "designOptions": {
+    "projectProfile": "Attended"
+  },
+  "targetFramework": "Portable"
+}
