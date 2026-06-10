@@ -56,40 +56,40 @@ def generate_pricing_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PipelineGuard Pricing</title>
   <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0d1117;
       color: #e6edf3;
       min-height: 100vh;
       padding-top: 2rem;
-    }}
-    header {{
+    }
+    header {
       text-align: center;
       margin-bottom: 3rem;
-    }}
-    header h1 {{
+    }
+    header h1 {
       font-size: 2.5rem;
       font-weight: 700;
       color: #58a6ff;
       margin-bottom: 0.5rem;
-    }}
-    header p {{
+    }
+    header p {
       font-size: 1.1rem;
       color: #8b949e;
-    }}
-    .container {{
+    }
+    .container {
       max-width: 1200px;
       margin: 0 auto;
       padding: 0 1rem;
-    }}
-    .pricing-grid {{
+    }
+    .pricing-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 2rem;
       margin-bottom: 3rem;
-    }}
-    .pricing-card {{
+    }
+    .pricing-card {
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 12px;
@@ -97,62 +97,62 @@ def generate_pricing_html() -> str:
       display: flex;
       flex-direction: column;
       transition: all 0.3s ease;
-    }}
-    .pricing-card:hover {{
+    }
+    .pricing-card:hover {
       border-color: #58a6ff;
       box-shadow: 0 8px 24px rgba(88, 166, 255, 0.15);
-    }}
-    .pricing-card.featured {{
+    }
+    .pricing-card.featured {
       border-color: #58a6ff;
       background: #0d1117;
       box-shadow: 0 8px 24px rgba(88, 166, 255, 0.1);
-    }}
-    .pricing-header {{
+    }
+    .pricing-header {
       margin-bottom: 1.5rem;
-    }}
-    .pricing-header h2 {{
+    }
+    .pricing-header h2 {
       font-size: 1.5rem;
       color: #e6edf3;
       margin-bottom: 0.5rem;
-    }}
-    .pricing-header p {{
+    }
+    .pricing-header p {
       color: #8b949e;
       font-size: 0.9rem;
-    }}
-    .price {{
+    }
+    .price {
       font-size: 3rem;
       font-weight: 700;
       color: #58a6ff;
       margin: 1rem 0;
-    }}
-    .price-unit {{
+    }
+    .price-unit {
       font-size: 1rem;
       color: #8b949e;
       font-weight: 400;
-    }}
-    .features {{
+    }
+    .features {
       list-style: none;
       margin: 2rem 0;
       flex-grow: 1;
-    }}
-    .features li {{
+    }
+    .features li {
       padding: 0.75rem 0;
       color: #8b949e;
       border-bottom: 1px solid #21262d;
       display: flex;
       align-items: center;
-    }}
-    .features li:last-child {{
+    }
+    .features li:last-child {
       border-bottom: none;
-    }}
-    .features li::before {{
+    }
+    .features li::before {
       content: '✓';
       color: #3fb950;
       font-weight: 700;
       margin-right: 0.75rem;
       font-size: 1.1rem;
-    }}
-    .cta-button {{
+    }
+    .cta-button {
       background: #238636;
       color: #fff;
       border: none;
@@ -164,65 +164,65 @@ def generate_pricing_html() -> str:
       transition: background 0.2s;
       margin-top: 1.5rem;
       width: 100%;
-    }}
-    .cta-button:hover {{
+    }
+    .cta-button:hover {
       background: #2ea043;
-    }}
-    .cta-button:disabled {{
+    }
+    .cta-button:disabled {
       background: #21262d;
       color: #484f58;
       cursor: not-allowed;
-    }}
-    .cta-button.secondary {{
+    }
+    .cta-button.secondary {
       background: #21262d;
       color: #8b949e;
       border: 1px solid #30363d;
-    }}
-    .cta-button.secondary:hover {{
+    }
+    .cta-button.secondary:hover {
       background: #30363d;
       border-color: #58a6ff;
-    }}
-    .faq {{
+    }
+    .faq {
       margin-top: 4rem;
       padding-top: 2rem;
       border-top: 1px solid #30363d;
-    }}
-    .faq h2 {{
+    }
+    .faq h2 {
       font-size: 1.5rem;
       margin-bottom: 2rem;
       text-align: center;
-    }}
-    .faq-item {{
+    }
+    .faq-item {
       margin-bottom: 1.5rem;
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 8px;
       padding: 1.5rem;
-    }}
-    .faq-item h3 {{
+    }
+    .faq-item h3 {
       color: #58a6ff;
       margin-bottom: 0.5rem;
       font-size: 1.1rem;
-    }}
-    .faq-item p {{
+    }
+    .faq-item p {
       color: #8b949e;
       line-height: 1.6;
-    }}
-    .footer {{
+    }
+    .footer {
       text-align: center;
       margin-top: 4rem;
       padding-top: 2rem;
       border-top: 1px solid #30363d;
       color: #8b949e;
       font-size: 0.9rem;
-    }}
-    .footer a {{
+    }
+    .footer a {
       color: #58a6ff;
       text-decoration: none;
-    }}
-    .footer a:hover {{
+    }
+    .footer a:hover {
       text-decoration: underline;
-    }}
+    }
   </style>
 </head>
 <body>
@@ -320,32 +320,32 @@ def generate_pricing_html() -> str:
   </div>
 
   <script>
-    function subscribe(plan) {{
+    function subscribe(plan) {
       const btn = event.target;
       btn.disabled = true;
       btn.textContent = '⏳ Redirecting...';
 
-      fetch('/subscribe', {{
+      fetch('/subscribe', {
         method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{plan: plan}})
-      }})
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({plan: plan})
+      })
       .then(r => r.json())
-      .then(data => {{
-        if (data.checkout_url) {{
+      .then(data => {
+        if (data.checkout_url) {
           window.location.href = data.checkout_url;
-        }} else if (data.error) {{
+        } else if (data.error) {
           alert('Error: ' + data.error);
           btn.disabled = false;
           btn.textContent = 'Start 7-day Free Trial';
-        }}
-      }})
-      .catch(e => {{
+        }
+      })
+      .catch(e => {
         alert('Error: ' + e.message);
         btn.disabled = false;
         btn.textContent = 'Start 7-day Free Trial';
-      }});
-    }}
+      });
+    }
   </script>
 </body>
 </html>"""

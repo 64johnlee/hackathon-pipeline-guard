@@ -490,7 +490,6 @@ def make_app(
     if webhook_secret:
         from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.requests import Request as StarletteRequest
-        from starlette.responses import JSONResponse
 
         class GitLabTokenMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request: StarletteRequest, call_next):
@@ -737,7 +736,9 @@ def make_app(
             try:
                 pipeline_id = int(pid)
             except (ValueError, TypeError):
-                raise HTTPException(status_code=422, detail="pipeline_id must be an integer")
+                raise HTTPException(
+                    status_code=422, detail="pipeline_id must be an integer"
+                ) from None
         try:
             report = await agent.diagnose(
                 project=proj,
@@ -769,7 +770,7 @@ def make_app(
             if hasattr(exc, "exceptions") and exc.exceptions:  # ExceptionGroup
                 detail = "; ".join(str(e) for e in exc.exceptions)
             logger.exception("Demo diagnosis failed: %s", detail)
-            raise HTTPException(status_code=500, detail="diagnosis failed")
+            raise HTTPException(status_code=500, detail="diagnosis failed") from None
 
     @app.post("/demo")
     async def demo_diagnose(body: dict[str, Any]) -> dict[str, Any]:
