@@ -118,3 +118,34 @@ def test_webhook_ignores_non_pipeline_events(client):
     resp = client.post("/webhook/gitlab", json={"object_kind": "push"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
+
+
+def test_webhook_ignores_non_failed_pipeline(client):
+    payload = {
+        "object_kind": "pipeline",
+        "object_attributes": {"status": "success", "id": 1},
+        "project": {"path_with_namespace": "org/repo"},
+    }
+    resp = client.post("/webhook/gitlab", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ignored"
+    assert "success" in resp.json()["reason"]
+
+
+def test_webhook_returns_500_on_missing_project(client):
+    payload = {
+        "object_kind": "pipeline",
+        "object_attributes": {"status": "failed", "id": 1},
+        "project": {},
+    }
+    resp = client.post("/webhook/gitlab", json=payload)
+    assert resp.status_code == 500
+
+
+def test_health_endpoint_has_service_field(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["service"] == "PipelineGuard"
+    assert "backend" in data
