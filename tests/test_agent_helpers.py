@@ -111,3 +111,21 @@ class TestFormatComment:
         comment = _format_comment(r)
         assert "deploy`rm -rf /`" not in comment
         assert "deploy\\`rm" in comment
+
+
+def test_parse_report_tolerates_invalid_enum_values():
+    from pipelineguard.agent import _parse_report
+    from pipelineguard.models import Confidence, FailureCategory
+
+    text = (
+        "Analysis here.\n```json\n"
+        '{"root_cause": "missing var", "failure_category": "not-a-category",'
+        ' "affected_jobs": ["build"], "is_flaky": false,'
+        ' "fix_proposals": [{"file_path": "a.yml", "description": "d",'
+        ' "diff": "", "confidence": "very high"}]}\n```'
+    )
+    report = _parse_report(text, "org/repo", 1)
+    assert report.root_cause == "missing var"
+    assert report.failure_category is FailureCategory.UNKNOWN
+    assert report.fix_proposals[0].confidence is Confidence.MEDIUM
+    assert report.affected_jobs == ["build"]

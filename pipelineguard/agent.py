@@ -351,6 +351,17 @@ def _extract_json_block(text: str) -> str | None:
     return None
 
 
+def _safe_enum(enum_cls, value, default):
+    """Coerce a model-emitted string to an enum member, falling back to default.
+
+    One invalid enum value must degrade that field only — not discard the
+    whole structured report."""
+    try:
+        return enum_cls(value)
+    except ValueError:
+        return default
+
+
 def _parse_report(text: str, project: str, pipeline_id: int | None) -> DiagnosisReport:
     """Extract a DiagnosisReport from the agent's final text response."""
     raw_json = _extract_json_block(text)
@@ -362,7 +373,9 @@ def _parse_report(text: str, project: str, pipeline_id: int | None) -> Diagnosis
                     file_path=p.get("file_path", ""),
                     description=p.get("description", ""),
                     diff=p.get("diff", ""),
-                    confidence=Confidence(p.get("confidence", "medium")),
+                    confidence=_safe_enum(
+                        Confidence, p.get("confidence", "medium"), Confidence.MEDIUM
+                    ),
                 )
                 for p in data.get("fix_proposals", [])
             ]
@@ -370,8 +383,10 @@ def _parse_report(text: str, project: str, pipeline_id: int | None) -> Diagnosis
                 project=project,
                 pipeline_id=pipeline_id,
                 root_cause=data.get("root_cause", "see full analysis"),
-                failure_category=FailureCategory(
-                    data.get("failure_category", "unknown")
+                failure_category=_safe_enum(
+                    FailureCategory,
+                    data.get("failure_category", "unknown"),
+                    FailureCategory.UNKNOWN,
                 ),
                 affected_jobs=data.get("affected_jobs", []),
                 is_flaky=bool(data.get("is_flaky", False)),
