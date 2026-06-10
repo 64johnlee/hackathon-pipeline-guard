@@ -813,6 +813,109 @@ def make_app(
 
         return result
 
+    # ---------------------------------------------------------------------------
+    # UiPath Maestro integration routes
+    # ---------------------------------------------------------------------------
+
+    @app.post("/api/diagnose")
+    async def api_diagnose(body: dict[str, Any]) -> dict[str, Any]:
+        """Diagnosis endpoint for UiPath DiagnoseWithAI.xaml.
+
+        Body: {"project": "org/repo", "pipeline_id": 12345}
+        Always runs live (no canned scenarios), returns full diagnosis JSON.
+        """
+        project = str(body.get("project", ""))
+        pipeline_id_raw = body.get("pipeline_id")
+        if not project:
+            raise HTTPException(status_code=422, detail="project is required")
+        pipeline_id: int | None = None
+        if pipeline_id_raw is not None:
+            try:
+                pipeline_id = int(pipeline_id_raw)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail="pipeline_id must be an integer") from None
+        try:
+            report = await agent.diagnose(
+                project=project,
+                pipeline_id=pipeline_id,
+                post_comment=False,
+            )
+            return {
+                "root_cause": report.root_cause,
+                "failure_category": report.failure_category.value if report.failure_category else "unknown",
+                "is_flaky": report.is_flaky,
+                "affected_jobs": report.affected_jobs,
+                "fix_proposals": [
+                    {
+                        "file_path": f.file_path,
+                        "description": f.description,
+                        "confidence": f.confidence.value,
+                        "diff": f.diff,
+                    }
+                    for f in (report.fix_proposals or [])
+                ],
+                "full_analysis": report.full_analysis,
+            }
+        except HTTPException:
+            raise
+        except BaseException as exc:
+            detail = str(exc)
+            if hasattr(exc, "exceptions") and exc.exceptions:
+                detail = "; ".join(str(e) for e in exc.exceptions)
+            logger.exception("API diagnosis failed: %s", detail)
+            raise HTTPException(status_code=500, detail="diagnosis failed") from None
+
+    @app.post("/api/uipath/callback")
+    async def uipath_callback(body: dict[str, Any]) -> dict[str, str]:
+        """Called by UiPath PostApprovedFix.xaml after engineer approves a fix.
+
+        Body: {"case_id": str, "action": "approve"|"reject",
+               "project": str, "pipeline_id": int, "fix_diff": str}
+        On approve: re-diagnoses with post_comment=True → fix posted to GitLab MR.
+        On reject: returns {"status": "rejected"} immediately.
+        """
+        case_id         = str(body.get("case_id", ""))
+        action          = str(body.get("action", "")).lower()
+        project         = str(body.get("project", ""))
+        pipeline_id_raw = body.get("pipeline_id")
+
+        if action not in ("approve", "reject"):
+            raise HTTPException(status_code=422, detail="action must be 'approve' or 'reject'")
+        if not project:
+            raise HTTPException(status_code=422, detail="project is required")
+
+        if action == "reject":
+            logger.info("[UiPath] Fix rejected — case=%s project=%s", case_id, project)
+            return {"status": "rejected", "case_id": case_id}
+
+        pipeline_id: int | None = None
+        if pipeline_id_raw is not None:
+            try:
+                val = int(pipeline_id_raw)
+                pipeline_id = val if val > 0 else None
+            except (ValueError, TypeError):
+                pipeline_id = None
+
+        logger.info(
+            "[UiPath] Fix approved — case=%s project=%s pipeline=%s — posting comment",
+            case_id, project, pipeline_id,
+        )
+        try:
+            report = await agent.diagnose(
+                project=project,
+                pipeline_id=pipeline_id,
+                post_comment=True,
+            )
+            comment_url = getattr(report, "mr_comment_url", None) or ""
+            return {"status": "fix_posted", "case_id": case_id, "comment_url": comment_url}
+        except BaseException as exc:
+            detail = str(exc)
+            if hasattr(exc, "exceptions") and exc.exceptions:
+                detail = "; ".join(str(e) for e in exc.exceptions)
+            logger.exception("[UiPath] Failed to post fix for case %s: %s", case_id, detail)
+            raise HTTPException(status_code=500, detail="failed to post fix") from None
+
+    # ---------------------------------------------------------------------------
     # Stripe subscription routes
     # ---------------------------------------------------------------------------
     from .stripe_integration import generate_pricing_html, create_checkout_session

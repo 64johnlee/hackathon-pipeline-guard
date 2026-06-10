@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PipelineGuard Maestro — Main Orchestration Workflow
+  ====================================================
+  Trigger : GitLab Pipeline webhook (failed event)
+  Flow    : Parse payload → AI Diagnosis → Maestro Case → Human Review → Post Fix
+
+  Arguments (all configured as UiPath Assets in Orchestrator)
+  ---------
+  WebhookPayload        (In, String)  raw GitLab pipeline webhook JSON body
+  PipelineGuardApiUrl   (In, String)  Cloud Run base URL
+  OrchestratorUrl       (In, String)  UiPath Automation Cloud Orchestrator URL
+  OrchestratorToken     (In, String)  Bearer token (store as Credential Asset)
+  FolderPath            (In, String)  Orchestrator folder, e.g. "Default"
+-->
+<Activity mc:Ignorable="sap2010 sads sann"
+          x:Class="PipelineGuardMaestro.Main"
+          xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+          xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+          xmlns:sads="http://schemas.microsoft.com/netfx/2010/xaml/activities/debugger"
+          xmlns:sann="http://schemas.uipath.com/workflow/annotations"
+          xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+          xmlns:ui="http://schemas.uipath.com/workflow/activities"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Activity.Properties>
+    <Property Name="WebhookPayload"      Type="InArgument(x:String)" />
+    <Property Name="PipelineGuardApiUrl" Type="InArgument(x:String)" />
+    <Property Name="OrchestratorUrl"     Type="InArgument(x:String)" />
+    <Property Name="OrchestratorToken"   Type="InArgument(x:String)" />
+    <Property Name="FolderPath"          Type="InArgument(x:String)" />
+  </Activity.Properties>
+
+  <Sequence DisplayName="Pipeline Failure → Maestro Case Flow">
+
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String"  Name="project"       />
+      <Variable x:TypeArguments="x:String"  Name="pipelineIdStr" />
+      <Variable x:TypeArguments="x:String"  Name="branch"        />
+      <Variable x:TypeArguments="x:String"  Name="diagnosisJson" />
+      <Variable x:TypeArguments="x:String"  Name="caseId"        />
+      <Variable x:TypeArguments="x:Boolean" Name="isApproved"    Default="[False]" />
+      <Variable x:TypeArguments="x:String"  Name="resultMessage" />
+    </Sequence.Variables>
+
+    <!-- 1. Parse incoming GitLab webhook payload -->
+    <ui:InvokeCode Language="VB"
+                   DisplayName="Parse GitLab Webhook Payload">
+      <ui:InvokeCode.Parameters>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_project">[project]</OutArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_pipelineId">[pipelineIdStr]</OutArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_branch">[branch]</OutArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_payload">[WebhookPayload]</InArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim payload = Newtonsoft.Json.Linq.JObject.Parse(in_payload)
+        out_project    = payload("project")("path_with_namespace").ToString()
+        out_pipelineId = payload("object_attributes")("id").ToString()
+        out_branch     = If(payload("object_attributes")("ref") IsNot Nothing,
+                            payload("object_attributes")("ref").ToString(), "unknown")
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <ui:LogMessage Level="Information"
+                   DisplayName="Log: failure received"
+                   Message="[&quot;[PipelineGuard] Failure — project:&quot; &amp; project &amp; &quot; pipeline:#&quot; &amp; pipelineIdStr]" />
+
+    <!-- 2. AI Diagnosis via PipelineGuard Cloud Run API -->
+    <ui:InvokeWorkflowFile WorkflowFileName="workflows\DiagnoseWithAI.xaml"
+                           DisplayName="Step 2 — AI Diagnosis (Gemini 2.5 Flash)">
+      <ui:InvokeWorkflowFile.Arguments>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_project">[project]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_pipelineId">[pipelineIdStr]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_apiBaseUrl">[PipelineGuardApiUrl]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_diagnosisJson">[diagnosisJson]</OutArgument>
+      </ui:InvokeWorkflowFile.Arguments>
+    </ui:InvokeWorkflowFile>
+
+    <!-- 3. Create Maestro Case (via Orchestrator REST API) -->
+    <ui:InvokeWorkflowFile WorkflowFileName="workflows\CreateMaestroCase.xaml"
+                           DisplayName="Step 3 — Create Maestro Case">
+      <ui:InvokeWorkflowFile.Arguments>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_project">[project]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_pipelineId">[pipelineIdStr]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_branch">[branch]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diagnosisJson">[diagnosisJson]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_orchestratorUrl">[OrchestratorUrl]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_token">[OrchestratorToken]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_folderPath">[FolderPath]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_caseId">[caseId]</OutArgument>
+      </ui:InvokeWorkflowFile.Arguments>
+    </ui:InvokeWorkflowFile>
+
+    <ui:LogMessage Level="Information"
+                   DisplayName="Log: case created"
+                   Message="[&quot;[PipelineGuard] Maestro Case created — ID: &quot; &amp; caseId]" />
+
+    <!-- 4. Human Review — engineer approves/rejects via Action Center -->
+    <ui:InvokeWorkflowFile WorkflowFileName="workflows\HumanReview.xaml"
+                           DisplayName="Step 4 — Human Review (Action Center)"
+                           ContinueOnError="False">
+      <ui:InvokeWorkflowFile.Arguments>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_caseId">[caseId]</InArgument>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_project">[project]</InArgument>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_diagnosisJson">[diagnosisJson]</InArgument>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_orchestratorUrl">[OrchestratorUrl]</InArgument>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_token">[OrchestratorToken]</InArgument>
+        <InArgument  x:TypeArguments="x:String"  x:Key="in_folderPath">[FolderPath]</InArgument>
+        <OutArgument x:TypeArguments="x:Boolean" x:Key="out_isApproved">[isApproved]</OutArgument>
+      </ui:InvokeWorkflowFile.Arguments>
+    </ui:InvokeWorkflowFile>
+
+    <!-- 5. Branch on human decision -->
+    <If DisplayName="Step 5 — Engineer approved?" Condition="[isApproved]">
+
+      <If.Then>
+        <Sequence DisplayName="Post Approved Fix to GitLab">
+          <ui:InvokeWorkflowFile WorkflowFileName="workflows\PostApprovedFix.xaml"
+                                 DisplayName="Post fix diff as GitLab MR comment">
+            <ui:InvokeWorkflowFile.Arguments>
+              <InArgument  x:TypeArguments="x:String" x:Key="in_project">[project]</InArgument>
+              <InArgument  x:TypeArguments="x:String" x:Key="in_pipelineId">[pipelineIdStr]</InArgument>
+              <InArgument  x:TypeArguments="x:String" x:Key="in_diagnosisJson">[diagnosisJson]</InArgument>
+              <InArgument  x:TypeArguments="x:String" x:Key="in_apiBaseUrl">[PipelineGuardApiUrl]</InArgument>
+              <InArgument  x:TypeArguments="x:String" x:Key="in_caseId">[caseId]</InArgument>
+              <OutArgument x:TypeArguments="x:String" x:Key="out_result">[resultMessage]</OutArgument>
+            </ui:InvokeWorkflowFile.Arguments>
+          </ui:InvokeWorkflowFile>
+          <ui:LogMessage Level="Information"
+                         DisplayName="Log: fix posted"
+                         Message="[&quot;[PipelineGuard] Fix posted — &quot; &amp; resultMessage]" />
+        </Sequence>
+      </If.Then>
+
+      <If.Else>
+        <ui:LogMessage Level="Warning"
+                       DisplayName="Log: fix rejected"
+                       Message="[&quot;[PipelineGuard] Fix rejected by engineer — case: &quot; &amp; caseId]" />
+      </If.Else>
+
+    </If>
+
+  </Sequence>
+</Activity>

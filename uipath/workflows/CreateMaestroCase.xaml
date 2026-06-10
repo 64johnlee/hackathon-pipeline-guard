@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CreateMaestroCase.xaml
+  ----------------------
+  Creates a UiPath Maestro Case via Orchestrator REST API representing the
+  pipeline failure incident. Called by Main.xaml Step 3.
+
+  Case fields written:
+    title           "[PipelineGuard] <project> (<branch>) — <category>"
+    priority        "High"
+    status          "Open"
+    source          "PipelineGuard-GitLabCI"
+    data.project    GitLab project path
+    data.pipeline_id
+    data.branch
+    data.root_cause
+    data.failure_category
+    data.full_diagnosis  (full diagnosis JSON, escaped)
+
+  In:  in_project / in_pipelineId / in_branch / in_diagnosisJson
+       in_orchestratorUrl / in_token / in_folderPath
+  Out: out_caseId (String)
+-->
+<Activity mc:Ignorable="sap2010 sads sann"
+          x:Class="PipelineGuardMaestro.CreateMaestroCase"
+          xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+          xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+          xmlns:sads="http://schemas.microsoft.com/netfx/2010/xaml/activities/debugger"
+          xmlns:sann="http://schemas.uipath.com/workflow/annotations"
+          xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+          xmlns:ui="http://schemas.uipath.com/workflow/activities"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Activity.Properties>
+    <Property Name="in_project"         Type="InArgument(x:String)" />
+    <Property Name="in_pipelineId"      Type="InArgument(x:String)" />
+    <Property Name="in_branch"          Type="InArgument(x:String)" />
+    <Property Name="in_diagnosisJson"   Type="InArgument(x:String)" />
+    <Property Name="in_orchestratorUrl" Type="InArgument(x:String)" />
+    <Property Name="in_token"           Type="InArgument(x:String)" />
+    <Property Name="in_folderPath"      Type="InArgument(x:String)" />
+    <Property Name="out_caseId"         Type="OutArgument(x:String)" />
+  </Activity.Properties>
+
+  <Sequence DisplayName="Create Maestro Case via Orchestrator REST">
+
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Name="rootCause"    />
+      <Variable x:TypeArguments="x:String" Name="category"     />
+      <Variable x:TypeArguments="x:String" Name="caseTitle"    />
+      <Variable x:TypeArguments="x:String" Name="requestBody"  />
+      <Variable x:TypeArguments="x:String" Name="responseBody" />
+      <Variable x:TypeArguments="x:Int32"  Name="statusCode"   />
+      <Variable x:TypeArguments="x:String" Name="caseEndpoint" />
+    </Sequence.Variables>
+
+    <ui:InvokeCode Language="VB" DisplayName="Extract root_cause + category">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diagJson">[in_diagnosisJson]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_rootCause">[rootCause]</OutArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_category">[category]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim diag = Newtonsoft.Json.Linq.JObject.Parse(in_diagJson)
+        out_rootCause = If(diag("root_cause")       IsNot Nothing, diag("root_cause").ToString(),       "unknown")
+        out_category  = If(diag("failure_category") IsNot Nothing, diag("failure_category").ToString(), "unknown")
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <Assign DisplayName="Build case title">
+      <Assign.To><OutArgument x:TypeArguments="x:String">[caseTitle]</OutArgument></Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:String">
+          ["[PipelineGuard] " &amp; in_project &amp; " (" &amp; in_branch &amp; ") — " &amp; category]
+        </InArgument>
+      </Assign.Value>
+    </Assign>
+
+    <ui:InvokeCode Language="VB" DisplayName="Build Maestro Case JSON body">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_title">[caseTitle]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_proj">[in_project]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_pid">[in_pipelineId]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_br">[in_branch]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_rc">[rootCause]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_cat">[category]</InArgument>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_diag">[in_diagnosisJson]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_body">[requestBody]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim esc As Func(Of String, String) = Function(s) s.Replace("\", "\\").Replace("""", "\""").Replace(Chr(10), "\n").Replace(Chr(13), "")
+        out_body = "{" &amp;
+          """title"":"         &amp; """" &amp; esc(in_title) &amp; """," &amp;
+          """priority"":""High""," &amp;
+          """status"":""Open""," &amp;
+          """source"":""PipelineGuard-GitLabCI""," &amp;
+          """data"":{" &amp;
+            """project"":"        &amp; """" &amp; esc(in_proj) &amp; """," &amp;
+            """pipeline_id"":"    &amp; """" &amp; esc(in_pid)  &amp; """," &amp;
+            """branch"":"         &amp; """" &amp; esc(in_br)   &amp; """," &amp;
+            """root_cause"":"     &amp; """" &amp; esc(in_rc)   &amp; """," &amp;
+            """failure_category"":"  &amp; """" &amp; esc(in_cat)  &amp; """," &amp;
+            """full_diagnosis"":"    &amp; """" &amp; esc(in_diag) &amp; """" &amp;
+          "}" &amp;
+        "}"
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+    <Assign DisplayName="Build Orchestrator Cases endpoint">
+      <Assign.To><OutArgument x:TypeArguments="x:String">[caseEndpoint]</OutArgument></Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:String">
+          [in_orchestratorUrl.TrimEnd("/"c) &amp; "/odata/Cases"]
+        </InArgument>
+      </Assign.Value>
+    </Assign>
+
+    <ui:HTTPRequest DisplayName="POST /odata/Cases"
+                    EndPoint="[caseEndpoint]"
+                    Method="POST"
+                    Body="[requestBody]"
+                    Response="[responseBody]"
+                    ResponseStatusCode="[statusCode]">
+      <ui:HTTPRequest.Headers>
+        <x:Array Type="ui:HttpHeader">
+          <ui:HttpHeader Key="Content-Type"  Value="application/json" />
+          <ui:HttpHeader Key="Accept"        Value="application/json" />
+          <ui:HttpHeader Key="Authorization" Value="[&quot;Bearer &quot; &amp; in_token]" />
+          <ui:HttpHeader Key="X-UIPATH-OrganizationUnitId" Value="[in_folderPath]" />
+        </x:Array>
+      </ui:HTTPRequest.Headers>
+    </ui:HTTPRequest>
+
+    <If DisplayName="Guard: 2xx only" Condition="[statusCode &lt; 200 OrElse statusCode &gt;= 300]">
+      <If.Then>
+        <Throw DisplayName="Throw on case creation error">
+          <Throw.Exception>
+            <InArgument x:TypeArguments="x:Exception">
+              [New System.Exception("Maestro Case creation failed — HTTP " &amp; statusCode.ToString() &amp; ": " &amp; responseBody)]
+            </InArgument>
+          </Throw.Exception>
+        </Throw>
+      </If.Then>
+    </If>
+
+    <ui:InvokeCode Language="VB" DisplayName="Extract case ID from response">
+      <ui:InvokeCode.Parameters>
+        <InArgument  x:TypeArguments="x:String" x:Key="in_resp">[responseBody]</InArgument>
+        <OutArgument x:TypeArguments="x:String" x:Key="out_id">[out_caseId]</OutArgument>
+      </ui:InvokeCode.Parameters>
+      <ui:InvokeCode.Code>
+        Dim resp = Newtonsoft.Json.Linq.JObject.Parse(in_resp)
+        out_id = If(resp("Id") IsNot Nothing, resp("Id").ToString(),
+                 If(resp("id") IsNot Nothing, resp("id").ToString(), "unknown"))
+      </ui:InvokeCode.Code>
+    </ui:InvokeCode>
+
+  </Sequence>
+</Activity>
