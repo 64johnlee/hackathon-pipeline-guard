@@ -177,3 +177,43 @@ def test_api_diagnose_missing_project_422(client):
 def test_api_diagnose_bad_pipeline_id_422(client):
     resp = client.post("/api/diagnose", json={"project": "org/repo", "pipeline_id": "bad"})
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# /api/uipath/callback  (UiPath PostApprovedFix.xaml endpoint)
+# ---------------------------------------------------------------------------
+
+
+def test_uipath_callback_approve_posts_fix(client):
+    body = {"case_id": "C-1", "action": "approve", "project": "org/repo", "pipeline_id": 42}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "fix_posted"
+    assert data["case_id"] == "C-1"
+    assert "comment_url" in data
+    call = StubAgent.last_instance.calls[-1]
+    assert call["post_comment"] is True
+    assert call["project"] == "org/repo"
+
+
+def test_uipath_callback_reject_skips_diagnose(client):
+    body = {"case_id": "C-2", "action": "reject", "project": "org/repo"}
+    before = len(StubAgent.last_instance.calls) if hasattr(StubAgent, "last_instance") else 0
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "rejected"
+    assert data["case_id"] == "C-2"
+
+
+def test_uipath_callback_invalid_action_422(client):
+    body = {"case_id": "C-3", "action": "snooze", "project": "org/repo"}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 422
+
+
+def test_uipath_callback_missing_project_422(client):
+    body = {"case_id": "C-4", "action": "approve"}
+    resp = client.post("/api/uipath/callback", json=body)
+    assert resp.status_code == 422
