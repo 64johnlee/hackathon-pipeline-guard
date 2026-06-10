@@ -149,3 +149,31 @@ def test_health_endpoint_has_service_field(client):
     assert data["status"] == "ok"
     assert data["service"] == "PipelineGuard"
     assert "backend" in data
+
+
+# ---------------------------------------------------------------------------
+# /api/diagnose  (UiPath DiagnoseWithAI.xaml endpoint)
+# ---------------------------------------------------------------------------
+
+
+def test_api_diagnose_returns_full_report(client):
+    resp = client.post("/api/diagnose", json={"project": "org/repo", "pipeline_id": 99})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["root_cause"] == "stub root cause"
+    assert "failure_category" in data
+    assert "fix_proposals" in data
+    call = StubAgent.last_instance.calls[-1]
+    assert call["project"] == "org/repo"
+    assert call["pipeline_id"] == 99
+    assert call["post_comment"] is False
+
+
+def test_api_diagnose_missing_project_422(client):
+    resp = client.post("/api/diagnose", json={})
+    assert resp.status_code == 422
+
+
+def test_api_diagnose_bad_pipeline_id_422(client):
+    resp = client.post("/api/diagnose", json={"project": "org/repo", "pipeline_id": "bad"})
+    assert resp.status_code == 422
