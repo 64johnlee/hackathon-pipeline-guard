@@ -517,7 +517,7 @@ def make_app(
     # Canned scenario library — shown in the landing-page demo carousel.
     # Each entry is a complete DiagnosticReport-shaped dict.
     # ---------------------------------------------------------------------------
-    _DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
+    _demo_scenarios: dict[str, dict[str, Any]] = {
         "env_var": {
             "root_cause": "Missing REDIS_URL environment variable — runner cannot connect to Redis",
             "category": "env_var_missing",
@@ -729,8 +729,8 @@ def make_app(
 
         # Pre-canned scenario — instant response for demos
         if proj == "demo" or scenario_key:
-            key = scenario_key if scenario_key in _DEMO_SCENARIOS else "env_var"
-            return _DEMO_SCENARIOS[key]
+            key = scenario_key if scenario_key in _demo_scenarios else "env_var"
+            return _demo_scenarios[key]
 
         pipeline_id: int | None = None
         if pid not in (None, ""):
@@ -932,7 +932,6 @@ def make_app(
     @app.post("/subscribe")
     async def subscribe(plan: dict[str, str]) -> dict[str, Any]:
         plan_name = plan.get("plan", "").lower()
-        result = await create_checkout_session(plan_name)
-        return result
+        return await create_checkout_session(plan_name)
 
     return app
