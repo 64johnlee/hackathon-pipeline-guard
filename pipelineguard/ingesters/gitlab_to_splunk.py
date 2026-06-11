@@ -253,5 +253,5 @@ class GitLabToSplunkIngester:
             return len(body.splitlines())
         except httpx.HTTPError as exc:
             stats.hec_errors += 1
-            logger.error("HEC POST failed: %s", exc)
+            logger.exception("HEC POST failed: %s", exc)
             return 0
