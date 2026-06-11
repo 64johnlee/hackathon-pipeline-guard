@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 
 import click
@@ -352,6 +353,10 @@ def serve(
         use_vertex=use_vertex,
         gcp_project=gcp_project,
         gcp_location=gcp_location,
+        uipath_token=os.environ.get("UIPATH_TOKEN", ""),
+        uipath_trigger_url=os.environ.get("UIPATH_TRIGGER_URL", ""),
+        uipath_client_id=os.environ.get("UIPATH_CLIENT_ID", ""),
+        uipath_client_secret=os.environ.get("UIPATH_CLIENT_SECRET", ""),
     )
 
     console.print(

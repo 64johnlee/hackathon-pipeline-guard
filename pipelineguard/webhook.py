@@ -349,10 +349,32 @@ async function runDemo() {
 </html>"""
 
 
+async def _uipath_get_token(client_id: str, client_secret: str) -> str:
+    """Exchange client credentials for a short-lived UiPath bearer token."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://cloud.uipath.com/identity_/connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scope": "OR.Jobs OR.Jobs.Execute",
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+
 async def handle_pipeline_event(
     payload: dict[str, Any],
     agent: Any,
     post_comment: bool = True,
+    uipath_token: str = "",
+    uipath_trigger_url: str = "",
+    uipath_client_id: str = "",
+    uipath_client_secret: str = "",
 ) -> dict[str, str]:
     """
     Process a GitLab pipeline webhook event.
@@ -381,6 +403,32 @@ async def handle_pipeline_event(
     console.print(
         f"[cyan]Webhook:[/] pipeline #{pipeline_id} failed in [green]{project}[/] — diagnosing…"
     )
+
+    if uipath_trigger_url and (uipath_token or (uipath_client_id and uipath_client_secret)):
+        try:
+            import httpx
+
+            bearer = uipath_token
+            if not bearer and uipath_client_id and uipath_client_secret:
+                bearer = await _uipath_get_token(uipath_client_id, uipath_client_secret)
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    uipath_trigger_url,
+                    json={"project": project, "pipeline_id": str(pipeline_id)},
+                    headers={"Authorization": f"Bearer {bearer}"},
+                )
+                resp.raise_for_status()
+            console.print(
+                f"[green]UiPath Maestro triggered[/] for pipeline #{pipeline_id} in {project}"
+            )
+            return {
+                "status": "triggered_uipath",
+                "project": project,
+                "pipeline_id": str(pipeline_id),
+            }
+        except Exception:
+            logger.exception("UiPath trigger failed for pipeline #%s — falling back", pipeline_id)
 
     try:
         report = await agent.diagnose(
@@ -416,6 +464,10 @@ def make_app(
     use_vertex: bool = False,
     gcp_project: str = "",
     gcp_location: str = "us-central1",
+    uipath_token: str = "",
+    uipath_trigger_url: str = "",
+    uipath_client_id: str = "",
+    uipath_client_secret: str = "",
 ) -> Any:
     """
     Build and return a FastAPI application for receiving GitLab webhooks.
@@ -804,7 +856,15 @@ def make_app(
         # X-Gitlab-Token validation is handled by GitLabTokenMiddleware (if WEBHOOK_SECRET is set).
         # This avoids FastAPI 422 parameter binding issues with the Request object.
 
-        result = await handle_pipeline_event(payload, agent, post_comment=post_comment)
+        result = await handle_pipeline_event(
+            payload,
+            agent,
+            post_comment=post_comment,
+            uipath_token=uipath_token,
+            uipath_trigger_url=uipath_trigger_url,
+            uipath_client_id=uipath_client_id,
+            uipath_client_secret=uipath_client_secret,
+        )
 
         # Translate diagnostic errors to 500 so GitLab retries the delivery.
         if result.get("status") == "error":
