@@ -21,4 +21,7 @@ ENV PORT=8080
 # entrypoint will materialise it (see entrypoint.sh).
 # MCP mode: bundled pipeline MCP (stdio subprocess) +
 #           official GitLab MCP (gitlab.com/api/v4/mcp, HTTP)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
 CMD ["./entrypoint.sh"]
