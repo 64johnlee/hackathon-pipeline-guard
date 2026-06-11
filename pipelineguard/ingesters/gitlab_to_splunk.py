@@ -23,9 +23,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from collections.abc import Iterable
 from typing import Any
 
 import gitlab
@@ -253,5 +253,5 @@ class GitLabToSplunkIngester:
             return len(body.splitlines())
         except httpx.HTTPError as exc:
             stats.hec_errors += 1
-            logger.error("HEC POST failed: %s", exc)
+            logger.exception("HEC POST failed: %s", exc)
             return 0

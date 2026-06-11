@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-
-from pipelineguard.agent import _fenced_diff, _md_inline, _format_comment
+from pipelineguard.agent import _fenced_diff, _format_comment, _md_inline
 from pipelineguard.models import (
     Confidence,
     DiagnosisReport,
@@ -68,16 +67,16 @@ class TestFencedDiff:
 
 class TestFormatComment:
     def _minimal_report(self, **kwargs) -> DiagnosisReport:
-        defaults = dict(
-            project="org/repo",
-            pipeline_id=1,
-            root_cause="missing REDIS_URL",
-            failure_category=FailureCategory.ENV_VAR_MISSING,
-            affected_jobs=["deploy"],
-            is_flaky=False,
-            fix_proposals=[],
-            full_analysis="full text",
-        )
+        defaults = {
+            "project": "org/repo",
+            "pipeline_id": 1,
+            "root_cause": "missing REDIS_URL",
+            "failure_category": FailureCategory.ENV_VAR_MISSING,
+            "affected_jobs": ["deploy"],
+            "is_flaky": False,
+            "fix_proposals": [],
+            "full_analysis": "full text",
+        }
         defaults.update(kwargs)
         return DiagnosisReport(**defaults)
 

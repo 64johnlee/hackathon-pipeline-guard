@@ -395,4 +395,4 @@ async def create_checkout_session(plan: str, customer_email: str = "") -> dict[s
             "plan": plan,
         }
     except Exception as e:
-        return {"error": f"Failed to create checkout session: {str(e)}"}
+        return {"error": f"Failed to create checkout session: {e!s}"}

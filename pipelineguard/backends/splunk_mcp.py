@@ -105,7 +105,7 @@ class SplunkMCPBackend:
         logger.debug("Splunk MCP Server ready")
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
+    async def __aexit__(self, *exc_info: object) -> None:
         if self._session:
             await self._session.__aexit__(*exc_info)
         if self._transport_cm:

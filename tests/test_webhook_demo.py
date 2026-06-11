@@ -103,7 +103,7 @@ def test_post_demo_bad_pipeline_id_422(client):
 def test_landing_page_script_has_no_broken_escapes(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    script = re.search(r"<script>(.*?)</script>", resp.text, re.S).group(1)
+    script = re.search(r"<script>(.*?)</script>", resp.text, re.DOTALL).group(1)
     assert "\\`" not in script
     assert "loadPreset" in script
 
