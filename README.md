@@ -301,6 +301,8 @@ diff:
 
 PipelineGuard integrates with **UiPath Automation Cloud** for the [UiPath AgentHack 2026](https://uipath-agenthack.devpost.com) — Maestro Case track.
 
+▶️ **Demo video**: [PipelineGuard — AI CI Diagnosis with UiPath Maestro Governance](https://youtu.be/00fml_9wqW8)
+
 Every pipeline failure becomes a **Maestro Case** with a full audit lifecycle:
 
 ```

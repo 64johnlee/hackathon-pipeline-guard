@@ -6,6 +6,8 @@ import hmac
 import logging
 from typing import Any
 
+import httpx
+
 from rich.console import Console
 
 console = Console()
@@ -351,8 +353,6 @@ async function runDemo() {
 
 async def _uipath_get_token(client_id: str, client_secret: str) -> str:
     """Exchange client credentials for a short-lived UiPath bearer token."""
-    import httpx
-
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             "https://cloud.uipath.com/identity_/connect/token",
@@ -406,8 +406,6 @@ async def handle_pipeline_event(
 
     if uipath_trigger_url and (uipath_token or (uipath_client_id and uipath_client_secret)):
         try:
-            import httpx
-
             bearer = uipath_token
             if not bearer and uipath_client_id and uipath_client_secret:
                 bearer = await _uipath_get_token(uipath_client_id, uipath_client_secret)
