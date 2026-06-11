@@ -163,5 +163,5 @@ Google Cloud Run · Python 3.12 · FastAPI · Claude Code
 |---|---|
 | Live app | https://pipeline-guard-fpgq3ij7ya-uc.a.run.app |
 | GitHub | https://github.com/64johnlee/hackathon-pipeline-guard |
-| Demo video | https://youtu.be/aRnVnLhoHvs |
+| Demo video | https://youtu.be/f2g1ppeLhqk |
 | UiPath setup | uipath/SETUP.md |

@@ -82,14 +82,14 @@ Giving the model *typed tools* via MCP beats stuffing raw logs into a prompt —
 - **Live app (Google Cloud Run — PRIMARY):** https://pipeline-guard-fpgq3ij7ya-uc.a.run.app
   <!-- Deploy with `bash deploy_cloudrun.sh`; it prints a https://<service>-<hash>-<region>.run.app URL. Paste it above. Judges expect the app on Google Cloud, so this is the primary link. -->
 - **Live app (mirror — HF Space):** https://johnlee007-pipelineguard.hf.space
-- **Demo video:** https://youtu.be/aRnVnLhoHvs
+- **Demo video:** https://youtu.be/f2g1ppeLhqk
   <!-- Upload demo/pipelineguard_demo.mp4 to YouTube (unlisted) and paste the watch URL above. Devpost requires a video link. -->
 - **GitHub:** https://github.com/64johnlee/hackathon-pipeline-guard
 - **Pricing & Revenue:** https://github.com/64johnlee/hackathon-pipeline-guard/blob/main/REVENUE.md — Free / Teams $29/month / Business $99/month
 
 ## Demo video
 
-**Video URL:** https://youtu.be/aRnVnLhoHvs
+**Video URL:** https://youtu.be/f2g1ppeLhqk
 <!-- Same YouTube/Vimeo link as in the Links section above. -->
 
 > The video demonstrates an illustrative failure scenario (a missing `REDIS_URL`) to show the full loop clearly. The real-world end-to-end verification against `gitlab-org/cli` (~46s, 2 tool calls) is documented in the README — don't conflate the two in the writeup.

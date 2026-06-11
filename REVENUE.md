@@ -42,7 +42,7 @@
 - Demo endpoint: https://pipeline-guard-fpgq3ij7ya-uc.a.run.app/demo
 - Verified against real pipeline: `gitlab-org/cli` pipeline #2552952663
 - Root cause identified in **46 seconds**, 2 tool calls, 0 false positives
-- Video demo: https://youtu.be/aRnVnLhoHvs
+- Video demo: https://youtu.be/f2g1ppeLhqk
 
 ---
 
