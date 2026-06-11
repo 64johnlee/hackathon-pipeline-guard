@@ -69,7 +69,7 @@ class MCPBackend:
         logger.debug("GitLab MCP server ready")
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
+    async def __aexit__(self, *exc_info: object) -> None:
         if self._session:
             with contextlib.suppress(BaseException):
                 await self._session.__aexit__(*exc_info)

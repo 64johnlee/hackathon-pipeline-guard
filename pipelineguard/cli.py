@@ -227,8 +227,9 @@ def watch(
     seen: set[int] = set()
 
     async def _poll() -> None:
-        from .backends.direct import DirectBackend
         import anyio
+
+        from .backends.direct import DirectBackend
 
         backend = DirectBackend(gitlab_token, gitlab_url)
         while True:

@@ -923,7 +923,7 @@ def make_app(
     # ---------------------------------------------------------------------------
     # Stripe subscription routes
     # ---------------------------------------------------------------------------
-    from .stripe_integration import generate_pricing_html, create_checkout_session
+    from .stripe_integration import create_checkout_session, generate_pricing_html
 
     @app.get("/pricing", response_class=HTMLResponse)
     async def pricing_page() -> str:

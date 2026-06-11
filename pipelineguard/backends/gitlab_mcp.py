@@ -107,7 +107,7 @@ class GitLabOfficialMCPBackend:
             self._task.cancel()
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
+    async def __aexit__(self, *exc_info: object) -> None:
         if self._closing is not None:
             self._closing.set()
         if self._task is not None:

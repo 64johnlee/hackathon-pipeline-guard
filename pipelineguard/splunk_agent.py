@@ -13,9 +13,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from .agent import _extract_json_block, _sanitize_json
 from .backends.splunk_direct import SplunkDirectBackend
 from .backends.splunk_mcp import SplunkMCPBackend
-from .agent import _extract_json_block, _sanitize_json
 from .splunk_prompts import SPLUNK_SYSTEM_PROMPT, build_splunk_prompt
 
 logger = logging.getLogger(__name__)
