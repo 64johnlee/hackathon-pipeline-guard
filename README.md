@@ -317,6 +317,15 @@ GitLab failure → UiPath Orchestrator trigger → Main.xaml
 - `POST /api/diagnose` — structured diagnosis, called by `DiagnoseWithAI.xaml`
 - `POST /api/uipath/callback` — called by `PostApprovedFix.xaml` on engineer approval
 
+**UiPath components used**:
+- **Maestro Case** — one case per pipeline failure, with full audit lifecycle
+- **Studio Web** — all five `.xaml` workflows authored as low-code automations
+- **Action Center** — human-in-the-loop approval task (`HumanReview.xaml`)
+- **Orchestrator** — queue trigger on GitLab failure + `/odata/Cases` REST API
+- **API Workflows** — HTTP calls to PipelineGuard's `/api/diagnose` and `/api/uipath/callback`
+
+**Agent type**: this solution uses **Low-code Agents** only. The five Studio Web XAML workflows are low-code automations; no UiPath Coded Agents are used. The AI diagnosis itself (Gemini 2.5 Flash) runs in PipelineGuard's external Python service, invoked from the low-code workflows via API Workflows.
+
 ---
 
 ## Built with Claude Code
