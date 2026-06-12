@@ -150,3 +150,67 @@ process instance. Otherwise skip and use the process instance id as `caseId`.
 The agentic value (Gemini diagnosis, human-in-the-loop approval, GitLab write-back)
 is preserved exactly; only the human-wait and the case creation become BPMN-native
 instead of hand-rolled REST + polling.
+
+---
+
+## Appendix A — Script Task expressions (JSON parse)
+
+The XAML used VB `InvokeCode` blocks with Newtonsoft. In a VB-based Studio project
+(this one is `studioVersion 24.10`, VB), drop the same one-liners into each Script Task.
+`JObject`/`JArray` are available via `Newtonsoft.Json.Linq`.
+
+**[A] Parse GitLab payload** — in: `webhookPayload` → out: `project`, `pipelineId`, `branch`
+```vb
+Dim payload = Newtonsoft.Json.Linq.JObject.Parse(webhookPayload)
+project    = payload("project")("path_with_namespace").ToString()
+pipelineId = payload("object_attributes")("id").ToString()
+branch     = If(payload("object_attributes")("ref") IsNot Nothing, payload("object_attributes")("ref").ToString(), "unknown")
+```
+
+**[B′] Extract diagnosis fields** — in: `diagnosisJson` → out: `rootCause`, `failureCategory`, `fixDiff`
+```vb
+Dim diag = Newtonsoft.Json.Linq.JObject.Parse(diagnosisJson)
+rootCause       = If(diag("root_cause")       IsNot Nothing, diag("root_cause").ToString(),       "unknown")
+failureCategory = If(diag("failure_category") IsNot Nothing, diag("failure_category").ToString(), "unknown")
+Dim fps = diag("fix_proposals")
+fixDiff = If(fps IsNot Nothing AndAlso fps.HasValues AndAlso fps(0)("diff") IsNot Nothing, fps(0)("diff").ToString(), "(no fix proposed)")
+```
+
+**[C] caseId from /odata/Cases response** (only if you keep Task C)
+```vb
+Dim resp = Newtonsoft.Json.Linq.JObject.Parse(responseBody)
+caseId = If(resp("Id") IsNot Nothing, resp("Id").ToString(), If(resp("id") IsNot Nothing, resp("id").ToString(), "unknown"))
+```
+
+**[E] resultMessage from callback response**
+```vb
+resultMessage = If(statusCode < 200 OrElse statusCode >= 300, "callback_error_http_" & statusCode.ToString(), _
+                   If(Newtonsoft.Json.Linq.JObject.Parse(responseBody)("status") IsNot Nothing, _
+                      Newtonsoft.Json.Linq.JObject.Parse(responseBody)("status").ToString(), "ok"))
+```
+
+If the Maestro modeler exposes a JSONPath expression builder instead of VB, the paths
+are: `$.project.path_with_namespace`, `$.object_attributes.id`, `$.object_attributes.ref`,
+`$.root_cause`, `$.failure_category`, `$.fix_proposals[0].diff`, `$.Id`/`$.id`, `$.status`.
+
+---
+
+## Appendix B — Action Center form for Task D (Human review)
+
+Configure the User Task's form with these fields:
+
+| Field | Type | Value / binding |
+|---|---|---|
+| Title | label | `Review AI fix for {project} (case {caseId})` |
+| Root cause | read-only text | `{rootCause}` |
+| Proposed fix (unified diff) | read-only multi-line / code | `{fixDiff}` |
+| Case ID | read-only text | `{caseId}` |
+| — outcome — | two submit buttons | **Approve Fix** / **Reject Fix** |
+
+Outcome → process variable:
+```
+isApproved = (selectedAction.ToLower().Contains("approve"))
+```
+Wire the gateway on `isApproved`. No timeout/polling needed — the Maestro process
+suspends on this task and resumes when the engineer submits (the XAML's 4-hour,
+480-poll loop is replaced entirely by this single suspend/resume).
