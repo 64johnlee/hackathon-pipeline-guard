@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
+import os
+import secrets as _secrets
 from typing import Any
 
 from rich.console import Console
@@ -12,6 +15,21 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 MAX_WEBHOOK_BODY_BYTES = 1_000_000  # GitLab payloads are <100 KB in practice
+
+
+def _sign_value(value: str, secret: str) -> str:
+    """HMAC-sign a cookie value as ``value.hexmac`` (stdlib, no extra deps)."""
+    mac = hmac.new(secret.encode(), value.encode(), hashlib.sha256).hexdigest()
+    return f"{value}.{mac}"
+
+
+def _unsign_value(token: str, secret: str) -> str | None:
+    """Return the original value if the signature is valid, else None."""
+    if not token or "." not in token:
+        return None
+    value, _, mac = token.rpartition(".")
+    expected = hmac.new(secret.encode(), value.encode(), hashlib.sha256).hexdigest()
+    return value if hmac.compare_digest(mac, expected) else None
 
 _LANDING_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -347,6 +365,92 @@ async function runDemo() {
 </script>
 </body>
 </html>"""
+
+
+_DASHBOARD_TMPL = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PipelineGuard — Dashboard</title><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#e6edf3;margin:0}
+header{background:#161b27;border-bottom:1px solid #30363d;padding:1.2rem 2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem}
+h1{font-size:1.3rem;color:#58a6ff;margin:0} h3{color:#58a6ff;margin-top:0} a{color:#58a6ff}
+main{max-width:880px;margin:0 auto;padding:2rem}
+.muted{color:#8b949e} code{background:#161b22;padding:.1rem .35rem;border-radius:3px;color:#79c0ff}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.2rem;margin-bottom:1.5rem}
+input{background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:.5rem .75rem;width:60%}
+button{background:#238636;color:#fff;border:0;border-radius:6px;padding:.55rem 1.2rem;font-weight:600;cursor:pointer;margin-left:.4rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem} td,th{text-align:left;padding:.4rem .5rem;border-bottom:1px solid #21262d}
+ul{list-style:none;padding:0} li{padding:.3rem 0}
+</style></head><body>
+<header><h1>&#x1F6E1; PipelineGuard</h1>
+<div class="muted">{{WHO}} · plan <b>{{PLAN}}</b> · {{QUOTA}} · <a href="/auth/logout">log out</a></div>
+</header><main>
+<div class="card"><h3>Connect a repo</h3>
+<p class="muted">Adds a pipeline webhook to the project automatically. Format: <code>group/name</code>.</p>
+<form onsubmit="return connect(event)"><input id="repo" placeholder="gitlab-org/gitlab-runner" required>
+<button>Connect</button></form><p id="msg" class="muted"></p></div>
+<div class="card"><h3>Plan &amp; billing</h3><p class="muted">{{BILLING}}</p></div>
+<div class="card"><h3>Connected repos</h3><ul>{{CONNS}}</ul></div>
+<div class="card"><h3>Recent diagnoses</h3><table>
+<tr><th>Repo</th><th>Pipeline</th><th>Category</th><th>Root cause</th></tr>{{DIAGS}}</table></div>
+</main><script>
+async function connect(e){e.preventDefault();const r=document.getElementById('repo').value.trim();
+const m=document.getElementById('msg');m.textContent='Connecting\\u2026';
+try{const resp=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repo:r})});
+const d=await resp.json();if(resp.ok){m.textContent='Connected '+r+' \\u2014 reloading\\u2026';setTimeout(()=>location.reload(),800);}
+else{m.textContent='Error: '+(d.detail||resp.status);}}catch(err){m.textContent='Network error: '+err.message;}
+return false;}
+async function upgrade(){const m=document.getElementById('upmsg');if(m)m.textContent='Redirecting\\u2026';
+try{const resp=await fetch('/api/subscribe',{method:'POST'});const d=await resp.json();
+if(d.checkout_url){window.location.href=d.checkout_url;}
+else if(d.status==='already_pro'){if(m)m.textContent='You are already on Pro.';}
+else{if(m)m.textContent='Error: '+(d.detail||JSON.stringify(d));}}
+catch(err){if(m)m.textContent='Network error: '+err.message;}}
+</script></body></html>"""
+
+
+def _render_dashboard(account: Any, conns: list, diags: list, remaining: int | None) -> str:
+    """Render the authed dashboard (token substitution — no f-string brace escaping)."""
+    from html import escape
+
+    quota_txt = "unlimited" if remaining is None else f"{remaining} left this month"
+    if account.plan == "pro":
+        billing_html = (
+            "You're on <b>Pro</b> — unlimited diagnoses. "
+            "Thanks for supporting PipelineGuard! &#x1F389;"
+        )
+    else:
+        billing_html = (
+            f"You're on the <b>Free</b> plan ({escape(quota_txt)}). "
+            "<button onclick='upgrade()'>Upgrade to Pro &mdash; $29/mo</button> "
+            "<span id='upmsg' class='muted'></span>"
+        )
+    conn_rows = (
+        "".join(
+            f"<li><code>{escape(c.repo_full_path)}</code> "
+            f"<span class='muted'>· {escape(c.provider)} · "
+            f"{'active' if c.active else 'paused'}</span></li>"
+            for c in conns
+        )
+        or "<li class='muted'>No repos connected yet.</li>"
+    )
+    diag_rows = (
+        "".join(
+            f"<tr><td><code>{escape(d.repo_full_path)}</code></td>"
+            f"<td>#{d.pipeline_id}</td>"
+            f"<td>{escape(d.failure_category)}</td>"
+            f"<td>{escape((d.root_cause or '')[:120])}</td></tr>"
+            for d in diags
+        )
+        or "<tr><td colspan='4' class='muted'>No diagnoses yet.</td></tr>"
+    )
+    return (
+        _DASHBOARD_TMPL.replace("{{WHO}}", escape(account.username or account.id))
+        .replace("{{PLAN}}", escape(account.plan))
+        .replace("{{QUOTA}}", quota_txt)
+        .replace("{{BILLING}}", billing_html)
+        .replace("{{CONNS}}", conn_rows)
+        .replace("{{DIAGS}}", diag_rows)
+    )
 
 
 async def handle_pipeline_event(
@@ -933,5 +1037,281 @@ def make_app(
     async def subscribe(plan: dict[str, str]) -> dict[str, Any]:
         plan_name = plan.get("plan", "").lower()
         return await create_checkout_session(plan_name)
+
+    # =========================================================================
+    # Phase 1 — multi-tenant: GitLab OAuth login, repo connect (auto-webhook),
+    # per-tenant webhook handling, dashboard, and account-aware Stripe billing.
+    # Inert until GITLAB_OAUTH_CLIENT_ID/SECRET + PUBLIC_BASE_URL are configured.
+    # =========================================================================
+    from fastapi import Request
+
+    # Under `from __future__ import annotations`, route param annotations are
+    # strings FastAPI resolves against this module's globals — expose Request
+    # there so `request: Request` is recognized (not treated as a query param).
+    globals()["Request"] = Request
+
+    from . import billing
+    from .providers import gitlab_oauth
+    from .store import (
+        PLAN_PRO,
+        Account,
+        Connection,
+        DiagnosisRecord,
+        get_store,
+        make_account_id,
+        make_connection_id,
+        remaining_quota,
+        within_quota,
+    )
+    from .vault import get_vault
+
+    store = get_store()
+    vault = get_vault()
+    session_secret = os.environ.get("SESSION_SECRET", "") or _secrets.token_urlsafe(32)
+    if not os.environ.get("SESSION_SECRET"):
+        logger.warning(
+            "SESSION_SECRET not set — using an ephemeral key; logins reset on restart."
+        )
+    public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    oauth_redirect = os.environ.get("GITLAB_OAUTH_REDIRECT_URI", "") or (
+        f"{public_base}/auth/gitlab/callback" if public_base else ""
+    )
+    tenant_webhook_url = f"{public_base}/webhook/gitlab/tenant" if public_base else ""
+    cookie_secure = public_base.startswith("https")
+
+    def _current_account(request: Request) -> Account | None:
+        acct_id = _unsign_value(request.cookies.get("pg_session", ""), session_secret)
+        return store.get_account(acct_id) if acct_id else None
+
+    @app.get("/auth/gitlab/login")
+    async def gitlab_login() -> Any:
+        if not gitlab_oauth.is_configured() or not oauth_redirect:
+            return JSONResponse(
+                {
+                    "detail": "GitLab OAuth not configured. Set GITLAB_OAUTH_CLIENT_ID, "
+                    "GITLAB_OAUTH_CLIENT_SECRET and PUBLIC_BASE_URL."
+                },
+                status_code=503,
+            )
+        state = _secrets.token_urlsafe(24)
+        resp = RedirectResponse(gitlab_oauth.authorize_url(oauth_redirect, state))
+        resp.set_cookie(
+            "pg_oauth_state",
+            _sign_value(state, session_secret),
+            max_age=600,
+            httponly=True,
+            secure=cookie_secure,
+            samesite="lax",
+        )
+        return resp
+
+    @app.get("/auth/gitlab/callback")
+    async def gitlab_callback(request: Request, code: str = "", state: str = "") -> Any:
+        if not gitlab_oauth.is_configured() or not oauth_redirect:
+            raise HTTPException(status_code=503, detail="GitLab OAuth not configured")
+        expected = _unsign_value(request.cookies.get("pg_oauth_state", ""), session_secret)
+        if not code or not state or state != expected:
+            raise HTTPException(status_code=400, detail="invalid OAuth state or code")
+        try:
+            tok = await gitlab_oauth.exchange_code(code, oauth_redirect)
+            access_token = tok.get("access_token", "")
+            if not access_token:
+                raise HTTPException(status_code=502, detail="no access_token from GitLab")
+            user = await gitlab_oauth.get_user(access_token)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("OAuth callback failed: %s", exc)
+            raise HTTPException(status_code=502, detail="OAuth exchange failed") from None
+        account_id = make_account_id(gitlab_oauth.PROVIDER, user.get("id", ""))
+        token_ref = vault.put(account_id, access_token)
+        existing = store.get_account(account_id)
+        account = Account(
+            id=account_id,
+            provider=gitlab_oauth.PROVIDER,
+            username=str(user.get("username", "")),
+            email=str(user.get("email", "")),
+            plan=existing.plan if existing else "free",
+            stripe_customer_id=existing.stripe_customer_id if existing else "",
+            token_ref=token_ref,
+        )
+        store.upsert_account(account)
+        resp = RedirectResponse("/dashboard", status_code=303)
+        resp.set_cookie(
+            "pg_session",
+            _sign_value(account_id, session_secret),
+            max_age=30 * 24 * 3600,
+            httponly=True,
+            secure=cookie_secure,
+            samesite="lax",
+        )
+        resp.delete_cookie("pg_oauth_state")
+        return resp
+
+    @app.get("/auth/logout")
+    async def logout() -> Any:
+        resp = RedirectResponse("/", status_code=303)
+        resp.delete_cookie("pg_session")
+        return resp
+
+    @app.post("/api/connect")
+    async def connect_repo(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+        account = _current_account(request)
+        if account is None:
+            raise HTTPException(status_code=401, detail="not signed in")
+        repo = str(body.get("repo", "")).strip().strip("/")
+        if not repo or "/" not in repo:
+            raise HTTPException(status_code=422, detail="repo must be 'group/name'")
+        if not tenant_webhook_url:
+            raise HTTPException(status_code=503, detail="PUBLIC_BASE_URL not configured")
+        token = vault.get(account.token_ref)
+        if not token:
+            raise HTTPException(status_code=401, detail="no provider token — sign in again")
+        # Idempotent: don't create a second GitLab webhook if already connected.
+        existing = store.find_connection_by_repo(gitlab_oauth.PROVIDER, repo)
+        if existing is not None and existing.active:
+            return {"status": "already_connected", "repo": repo}
+        secret = _secrets.token_urlsafe(32)
+        try:
+            await gitlab_oauth.create_pipeline_webhook(
+                token, repo, tenant_webhook_url, secret
+            )
+        except Exception as exc:
+            logger.exception("webhook creation failed for %s: %s", repo, exc)
+            raise HTTPException(
+                status_code=502, detail="could not create webhook on the repo"
+            ) from None
+        conn = Connection(
+            id=make_connection_id(gitlab_oauth.PROVIDER, repo),
+            account_id=account.id,
+            provider=gitlab_oauth.PROVIDER,
+            repo_full_path=repo,
+            webhook_secret=secret,
+            token_secret_ref=account.token_ref,
+        )
+        store.upsert_connection(conn)
+        return {"status": "connected", "repo": repo}
+
+    @app.get("/api/connections")
+    async def list_my_connections(request: Request) -> dict[str, Any]:
+        account = _current_account(request)
+        if account is None:
+            raise HTTPException(status_code=401, detail="not signed in")
+        conns = store.list_connections(account.id)
+        return {
+            "connections": [
+                {"repo": c.repo_full_path, "provider": c.provider, "active": c.active}
+                for c in conns
+            ]
+        }
+
+    @app.post("/webhook/gitlab/tenant")
+    async def gitlab_webhook_tenant(
+        request: Request, payload: dict[str, Any]
+    ) -> dict[str, str]:
+        project = (payload.get("project") or {}).get("path_with_namespace", "")
+        conn = (
+            store.find_connection_by_repo(gitlab_oauth.PROVIDER, project)
+            if project
+            else None
+        )
+        if conn is None or not conn.active:
+            raise HTTPException(status_code=404, detail="no active connection for project")
+        token_header = request.headers.get("X-Gitlab-Token", "")
+        if not hmac.compare_digest(conn.webhook_secret.encode(), token_header.encode()):
+            raise HTTPException(status_code=401, detail="invalid webhook token")
+        account = store.get_account(conn.account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="account not found")
+        if not within_quota(store, account):
+            raise HTTPException(status_code=402, detail="monthly quota exceeded — upgrade to Pro")
+        kind = payload.get("object_kind")
+        attrs = payload.get("object_attributes") or {}
+        if kind != "pipeline" or attrs.get("status") != "failed":
+            return {"status": "ignored"}
+        pid = attrs.get("id")
+        if not isinstance(pid, int):
+            raise HTTPException(status_code=422, detail="invalid pipeline id")
+        tenant_token = vault.get(conn.token_secret_ref)
+        tenant_agent = PipelineGuardAgent(
+            gitlab_token=tenant_token,
+            gitlab_url=gitlab_url,
+            force_direct=force_direct,
+            use_vertex=use_vertex,
+            gcp_project=gcp_project,
+            gcp_location=gcp_location,
+        )
+        try:
+            report = await tenant_agent.diagnose(
+                project=project, pipeline_id=pid, post_comment=post_comment
+            )
+        except BaseException as exc:
+            logger.exception("tenant diagnosis failed for %s #%s: %s", project, pid, exc)
+            raise HTTPException(status_code=500, detail="diagnosis failed") from None
+        cat = getattr(report, "failure_category", None)
+        rec = DiagnosisRecord(
+            id="",
+            account_id=account.id,
+            connection_id=conn.id,
+            provider=gitlab_oauth.PROVIDER,
+            repo_full_path=project,
+            pipeline_id=pid,
+            root_cause=getattr(report, "root_cause", ""),
+            failure_category=cat.value if cat is not None else "unknown",
+            is_flaky=bool(getattr(report, "is_flaky", False)),
+            affected_jobs=getattr(report, "affected_jobs", []) or [],
+        )
+        store.add_diagnosis(rec)
+        return {
+            "status": "diagnosed",
+            "root_cause": rec.root_cause,
+            "category": rec.failure_category,
+        }
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard(request: Request) -> Any:
+        account = _current_account(request)
+        if account is None:
+            return RedirectResponse("/auth/gitlab/login", status_code=303)
+        conns = store.list_connections(account.id)
+        diags = store.list_diagnoses(account.id, limit=20)
+        return HTMLResponse(
+            _render_dashboard(account, conns, diags, remaining_quota(store, account))
+        )
+
+    @app.post("/api/subscribe")
+    async def subscribe_pro(request: Request) -> dict[str, Any]:
+        account = _current_account(request)
+        if account is None:
+            raise HTTPException(status_code=401, detail="not signed in")
+        if account.plan == PLAN_PRO:
+            return {"status": "already_pro"}
+        base = public_base or "https://pipeline-guard-fpgq3ij7ya-uc.a.run.app"
+        result = await billing.create_pro_checkout(
+            account, f"{base}/dashboard?upgraded=1", f"{base}/dashboard"
+        )
+        if "error" in result:
+            raise HTTPException(status_code=503, detail=result["error"])
+        return result
+
+    @app.post("/webhook/stripe")
+    async def stripe_webhook(request: Request) -> dict[str, str]:
+        payload = await request.body()
+        event = billing.construct_event(payload, request.headers.get("stripe-signature", ""))
+        if event is None:
+            raise HTTPException(status_code=400, detail="invalid stripe signature")
+        change = billing.plan_change_from_event(event)
+        if change is None:
+            return {"status": "ignored"}
+        account_id, new_plan, customer = change
+        account = store.get_account(account_id)
+        if account is None:
+            return {"status": "unknown_account"}
+        account.plan = new_plan
+        if customer:
+            account.stripe_customer_id = customer
+        store.upsert_account(account)
+        logger.info("billing: account %s -> %s", account_id, new_plan)
+        return {"status": "updated", "plan": new_plan}
 
     return app

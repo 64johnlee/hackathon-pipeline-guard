@@ -1,0 +1,8 @@
+TITLE: Wrong language/runtime version in CI image
+SYMPTOMS: "SyntaxError" on valid new syntax, "unsupported", features missing, passes locally
+on a newer Node/Python/Java than CI.
+ROOT CAUSE: CI uses a different (often older) runtime than local — image tag pinned to an old
+version or `latest` drifting.
+FIX: Pin the image to the exact runtime you target (e.g. `image: node:20` / `python:3.12`).
+Match local with .nvmrc/.tool-versions. Avoid `latest`.
+REFERENCE: https://docs.gitlab.com/ee/ci/yaml/#image

@@ -1,0 +1,8 @@
+TITLE: Deploy/job fails only on protected branch or MR from fork
+SYMPTOMS: Deploy job has no credentials, protected variables empty, "masked variable not
+available", works on main but not in MR pipelines.
+ROOT CAUSE: Protected CI/CD variables are only exposed on protected branches/tags; fork MR
+pipelines don't receive secrets by design.
+FIX: Protect the branch/tag that needs the secret; for deploys, restrict to protected refs.
+For fork contributions, run deploys only on the canonical repo's protected branches.
+REFERENCE: https://docs.gitlab.com/ee/ci/variables/#protect-a-cicd-variable

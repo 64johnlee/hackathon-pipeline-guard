@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 import anyio
@@ -19,12 +20,24 @@ from .backends.gitlab_mcp import GitLabOfficialMCPBackend
 from .backends.mcp import MCPBackend
 from .models import Confidence, DiagnosisReport, FailureCategory, FixProposal
 from .prompts import SYSTEM_PROMPT, build_analysis_prompt
+from .rag import KnowledgeBase, format_grounding
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 _GEMINI_MODEL = "gemini-2.5-flash"
 _MAX_TOOL_ITERATIONS = 15
+
+# Phase 0 — KB-as-a-tool: Gemini can query the Vertex AI Search CI/CD knowledge
+# base mid-loop (after it has fetched the failing logs) to ground its diagnosis.
+_KB_TOOL_NAME = "search_known_issues"
+_KB_WORKFLOW_NUDGE = (
+    "\n\nYou also have a `search_known_issues` tool backed by a curated CI/CD "
+    "knowledge base of known error->fix patterns. After you have retrieved the "
+    "failing job's error logs, call it with the key error lines as the query to "
+    "ground your root cause and fix in proven solutions. Cite any knowledge you "
+    "use as [n] in your explanation."
+)
 
 
 class PipelineGuardAgent:
@@ -61,6 +74,9 @@ class PipelineGuardAgent:
         self._gitlab_token = gitlab_token
         self._gitlab_url = gitlab_url
         self._use_mcp = (not force_direct) and MCPBackend.is_available()
+        # Phase 0: ground diagnoses in the Vertex AI Search CI/CD knowledge base.
+        self._gcp_project = gcp_project or os.environ.get("GCP_PROJECT", "")
+        self._kb = KnowledgeBase(project=self._gcp_project)
 
     async def _generate_with_retry(self, **kwargs: Any) -> Any:
         """generate_content with backoff on transient 5xx (model overloaded)."""
@@ -125,6 +141,11 @@ class PipelineGuardAgent:
             all_declarations = []
             for tool_obj in pipeline_tools + official_tools:
                 all_declarations.extend(tool_obj.function_declarations or [])
+            # Ground the agentic loop: expose the KB as a callable tool.
+            system_instruction = SYSTEM_PROMPT
+            if self._kb.enabled:
+                all_declarations.append(_kb_tool_declaration())
+                system_instruction += _KB_WORKFLOW_NUDGE
             # Guard: an empty function_declarations list causes a Gemini API error.
             # This should not occur (bundled MCP always starts), but be safe.
             merged_tools = (
@@ -138,7 +159,7 @@ class PipelineGuardAgent:
                 types.Content(role="user", parts=[types.Part(text=prompt)])
             ]
             final_text = await self._run_tool_loop(
-                pipeline_backend, official_backend, merged_tools, messages
+                pipeline_backend, official_backend, merged_tools, messages, system_instruction
             )
         return _parse_report(final_text, project, pipeline_id)
 
@@ -148,6 +169,7 @@ class PipelineGuardAgent:
         official_backend: GitLabOfficialMCPBackend,
         tools: list[types.Tool],
         messages: list[types.Content],
+        system_instruction: str = SYSTEM_PROMPT,
     ) -> str:
         final_text = ""
         with Progress(
@@ -167,7 +189,7 @@ class PipelineGuardAgent:
                     model=_GEMINI_MODEL,
                     contents=messages,
                     config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
+                        system_instruction=system_instruction,
                         tools=tools,
                         temperature=0.1,
                     ),
@@ -197,7 +219,17 @@ class PipelineGuardAgent:
                     console.print(f"  [dim]→ {fc.name}({_fmt_args(dict(fc.args))})[/]")
 
                     # Route to the correct backend by tool name prefix.
-                    if official_backend.owns_tool(fc.name):
+                    if fc.name == _KB_TOOL_NAME:
+                        kb_query = str(dict(fc.args).get("query", ""))
+                        hits = await anyio.to_thread.run_sync(
+                            lambda q=kb_query: self._kb.search(q)
+                        )
+                        result_text = (
+                            format_grounding(hits)
+                            or "No matching known issues found in the knowledge base."
+                        )
+                        console.print(f"  [dim green]✓ KB: {len(hits)} reference(s)[/]")
+                    elif official_backend.owns_tool(fc.name):
                         result_text = await official_backend.call_tool(fc.name, dict(fc.args))
                     else:
                         result_text = await pipeline_backend.call_tool(fc.name, dict(fc.args))
@@ -233,6 +265,14 @@ class PipelineGuardAgent:
         )
 
         prompt = _build_direct_prompt(data)
+        if self._kb.enabled:
+            hits = await anyio.to_thread.run_sync(
+                lambda: self._kb.search(_kb_query_from_data(data))
+            )
+            grounding = format_grounding(hits)
+            if grounding:
+                console.print(f"  [dim green]✓ grounded with {len(hits)} KB reference(s)[/]")
+                prompt += grounding
         console.print("[dim]Sending to Gemini for analysis…[/]")
 
         response = await self._generate_with_retry(
@@ -265,6 +305,66 @@ class PipelineGuardAgent:
 def _fmt_args(args: dict[str, Any]) -> str:
     s = json.dumps(args, default=str)
     return (s[:70] + "…") if len(s) > 70 else s
+
+
+def _kb_tool_declaration() -> types.FunctionDeclaration:
+    """Declare the knowledge-base search as a Gemini-callable tool."""
+    return types.FunctionDeclaration(
+        name=_KB_TOOL_NAME,
+        description=(
+            "Search PipelineGuard's curated CI/CD knowledge base for known "
+            "error->fix patterns. Pass the failing job's key error lines as the "
+            "query to ground your root cause and fix in proven solutions."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "query": types.Schema(
+                    type=types.Type.STRING,
+                    description="The error signature / key failing log lines to look up.",
+                ),
+            },
+            required=["query"],
+        ),
+    )
+
+
+_ERR_HINTS = (
+    "error", "fail", "exit code", "exit 1", "exit 13", "exception", "cannot",
+    "not found", "timeout", "denied", "oom", "killed", "no space", "unable",
+    "fatal", "missing", "conflict", "unresolved", "401", "403", "heap",
+)
+
+
+def _kb_query_from_data(data: dict[str, Any]) -> str:
+    """Build a KB search query — the error *signature* — from failed-job data.
+
+    Prefers the actual error-bearing log lines over a raw tail, so retrieval
+    matches the right known-issue doc instead of incidental log noise.
+    """
+    parts: list[str] = []
+    for job in data.get("failed_jobs", []):
+        if job.get("failure_reason"):
+            parts.append(str(job["failure_reason"]))
+        tail = job.get("log_tail", "") or ""
+        err_lines = [
+            ln.strip()
+            for ln in tail.splitlines()
+            if any(h in ln.lower() for h in _ERR_HINTS)
+        ]
+        if err_lines:
+            # Dedupe repeated identical error lines (logs spam the same line)
+            # so the limited query budget isn't wasted; keep order, last few.
+            seen_lines: set[str] = set()
+            uniq_lines: list[str] = []
+            for ln in err_lines:
+                if ln not in seen_lines:
+                    seen_lines.add(ln)
+                    uniq_lines.append(ln)
+            parts.extend(uniq_lines[-6:])  # the last few unique error-bearing lines
+        elif tail:
+            parts.append(tail[-300:])
+    return " ".join(parts)[:1000]
 
 
 def _build_direct_prompt(data: dict[str, Any]) -> str:

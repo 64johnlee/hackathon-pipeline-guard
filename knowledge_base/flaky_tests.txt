@@ -1,0 +1,9 @@
+TITLE: Flaky / intermittent test failures in CI
+SYMPTOMS: A job passes on retry with no code change; errors like "Timeout exceeded",
+"element not found", "connection reset", race conditions, order-dependent failures.
+ROOT CAUSE: Non-deterministic tests — timing/race conditions, shared state, real
+network calls, or unmocked time/randomness.
+FIX: Retry the job to confirm flakiness, then fix the root test: add explicit waits
+instead of sleeps, mock network/time/randomness, isolate shared state, and seed RNG.
+In GitLab CI add `retry: 2` on the job as a stop-gap; quarantine the test if needed.
+REFERENCE: https://docs.gitlab.com/ee/ci/yaml/#retry

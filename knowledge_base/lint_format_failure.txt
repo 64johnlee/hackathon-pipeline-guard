@@ -1,0 +1,9 @@
+TITLE: Lint / formatting check failed
+SYMPTOMS: ruff/eslint/flake8/black/prettier exit non-zero; "would reformat", "lint error",
+style violations; job named lint/format/style fails.
+ROOT CAUSE: Code not run through the formatter/linter before commit; config drift between
+local and CI.
+FIX: Run the formatter locally (`ruff format` / `black .` / `npm run lint -- --fix`) and
+commit. Add a pre-commit hook so it can't happen again. Ensure the same config/version is
+pinned in CI as locally.
+REFERENCE: https://pre-commit.com/
