@@ -1,0 +1,9 @@
+TITLE: Network / DNS flake pulling dependencies or images
+SYMPTOMS: "Temporary failure in name resolution", "connection timed out", "ETIMEDOUT",
+intermittent failures fetching packages or pulling images.
+ROOT CAUSE: Transient registry/network issue or rate limiting (e.g. Docker Hub anonymous
+pull limits).
+FIX: Add retries with backoff to network steps; use a dependency proxy/mirror or cache;
+authenticate to the registry to lift anonymous rate limits. Confirm it's transient by
+re-running.
+REFERENCE: https://docs.gitlab.com/ee/user/packages/dependency_proxy/

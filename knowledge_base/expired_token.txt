@@ -1,0 +1,9 @@
+TITLE: Authentication failure — expired or missing token/secret
+SYMPTOMS: 401/403 on registry push, deploy, or git operation; "authentication required",
+"invalid credentials", "permission denied" only in CI (works locally).
+ROOT CAUSE: A CI secret/token expired, was rotated, or isn't exposed to the job (protected
+variable on an unprotected branch, wrong scope).
+FIX: Rotate the token and update the CI/CD variable/secret. Verify scope (e.g. api +
+read/write_registry). For protected variables, ensure the branch/tag is protected.
+In GitLab: Settings > CI/CD > Variables. Re-run after updating.
+REFERENCE: https://docs.gitlab.com/ee/ci/variables/

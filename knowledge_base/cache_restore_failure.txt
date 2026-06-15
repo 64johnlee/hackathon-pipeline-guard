@@ -1,0 +1,8 @@
+TITLE: Cache restore/save failure or stale cache
+SYMPTOMS: "Failed to extract cache", slow jobs re-downloading deps, stale artifacts causing
+mismatched builds, cache key warnings.
+ROOT CAUSE: Cache key not tied to the lockfile, cache corrupted, or paths misconfigured.
+FIX: Key the cache on the lockfile hash (e.g. `key: files: [package-lock.json]`); cache the
+right paths (node_modules, .venv, ~/.cache/pip); add a fallback key. Clear the cache if
+corrupted.
+REFERENCE: https://docs.gitlab.com/ee/ci/caching/

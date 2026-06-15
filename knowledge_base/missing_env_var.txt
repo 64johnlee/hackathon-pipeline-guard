@@ -1,0 +1,9 @@
+TITLE: Missing environment variable / configuration in CI
+SYMPTOMS: "KeyError", "undefined", "$VAR: unbound variable", works locally but the job
+crashes reading config; tests fail only in CI.
+ROOT CAUSE: A required env var/secret exists locally (.env) but isn't defined as a CI/CD
+variable, or isn't passed into the job's environment.
+FIX: Add the variable under the project's CI/CD variables; reference it in the job. Don't
+commit secrets — use masked/protected CI variables. Provide safe defaults for non-secret
+config.
+REFERENCE: https://docs.gitlab.com/ee/ci/variables/

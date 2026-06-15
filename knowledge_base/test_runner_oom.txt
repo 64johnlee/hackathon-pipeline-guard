@@ -1,0 +1,8 @@
+TITLE: Test runner out of memory (JS/Node heap, JVM, etc.)
+SYMPTOMS: "JavaScript heap out of memory", "FATAL ERROR: Reached heap limit", exit 137 in
+the test job, runner killed mid-suite.
+ROOT CAUSE: Test process exceeds available memory — large suites, memory leaks between tests,
+default heap too small for CI.
+FIX: Raise the heap (`NODE_OPTIONS=--max-old-space-size=4096`), run tests in shards/parallel,
+fix leaks (close handles, clear globals between tests), and increase runner memory.
+REFERENCE: https://nodejs.org/api/cli.html#--max-old-space-sizesize-in-mib

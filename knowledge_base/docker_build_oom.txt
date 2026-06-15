@@ -1,0 +1,8 @@
+TITLE: Docker build fails with out-of-memory or no space left
+SYMPTOMS: "no space left on device", "Killed", build hangs then dies, OOMKilled, exit 137.
+ROOT CAUSE: Build runner out of memory/disk — large layers, no cleanup, single-stage build
+copying build tooling into the final image.
+FIX: Use multi-stage builds to drop build deps from the final image; add .dockerignore;
+clean caches in the same RUN layer; increase runner memory; enable BuildKit layer caching.
+Exit 137 = OOM -> raise the container/runner memory limit.
+REFERENCE: https://docs.docker.com/build/building/multi-stage/

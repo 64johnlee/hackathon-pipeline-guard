@@ -1,0 +1,9 @@
+TITLE: Dependency resolution / version conflict
+SYMPTOMS: "ERESOLVE could not resolve", "Cannot find module", pip "ResolutionImpossible",
+"incompatible peer dependency", build fails on install step.
+ROOT CAUSE: Unpinned or conflicting transitive dependencies; lockfile out of sync with
+the manifest; a new release of a dependency broke compatibility.
+FIX: Commit and use a lockfile (package-lock.json / poetry.lock / requirements.txt with
+pins). Install with `npm ci` / `pip install -r requirements.txt` (not loose installs).
+Pin the offending package to a known-good version; regenerate the lockfile locally.
+REFERENCE: https://docs.npmjs.com/cli/v10/commands/npm-ci

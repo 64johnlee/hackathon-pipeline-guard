@@ -1,0 +1,7 @@
+TITLE: CI YAML / config syntax or schema error
+SYMPTOMS: "Invalid configuration", "jobs config should contain...", pipeline doesn't start,
+"mapping values are not allowed here", lint errors on .gitlab-ci.yml.
+ROOT CAUSE: Invalid YAML (indentation/tabs), unknown keyword, or invalid job structure.
+FIX: Validate with the CI Lint tool (GitLab: CI/CD > Editor > Lint). Use spaces not tabs;
+check job keywords; split large configs with `include`. Validate locally before pushing.
+REFERENCE: https://docs.gitlab.com/ee/ci/lint.html
