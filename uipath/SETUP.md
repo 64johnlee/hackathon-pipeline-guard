@@ -77,6 +77,22 @@ To generate the Orchestrator token:
 
 ---
 
+### Optional — let Cloud Run trigger the process (OAuth2)
+
+Instead of pointing GitLab directly at UiPath, the Cloud Run webhook can start the
+Maestro process itself. Create the credentials once:
+
+1. Automation Cloud → **Admin** → **External Applications** → **Add application** (Confidential)
+2. Scopes: `OR.Jobs` `OR.Jobs.Execute` · Grant type: **Client Credentials**
+3. Set on the Cloud Run service: `UIPATH_TRIGGER_URL` (from Step 5), plus
+   `UIPATH_CLIENT_ID` + `UIPATH_CLIENT_SECRET` (auto-refreshing token) **or** a
+   static `UIPATH_TOKEN`
+
+If the trigger call fails, the webhook falls back to local diagnosis — pipeline
+failures are never dropped.
+
+---
+
 ## Step 6 — Connect GitLab Webhook
 
 In GitLab: **Settings → Webhooks** → add the API Trigger URL → enable **Pipeline events**.
